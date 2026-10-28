@@ -1,0 +1,42 @@
+<span class="col-filter-icon @Filter.CssClass(Column)" @onclick="ToggleOpen" @onclick:stopPropagation="true">🔎</span>
+@if (Filter.IsOpen(Column))
+{
+    <div class="col-filter-inline" @onclick:stopPropagation="true">
+        <input type="text" placeholder="Rechercher…" value="@Filter.QueryFor(Column)" autofocus
+               @oninput="OnInput" @onkeydown="OnKeyDown" />
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public required string Column { get; set; }
+    [Parameter, EditorRequired] public required string Label { get; set; }
+    [Parameter, EditorRequired] public required GridFilterState Filter { get; set; }
+    [Parameter, EditorRequired] public required EventCallback OnFilterChanged { get; set; }
+
+    private async Task ToggleOpen()
+    {
+        Filter.ToggleOpen(Column);
+        await OnFilterChanged.InvokeAsync();
+    }
+
+    private async Task OnInput(ChangeEventArgs e)
+    {
+        Filter.SetQuery(Column, e.Value?.ToString() ?? string.Empty, Label);
+        await OnFilterChanged.InvokeAsync();
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "Enter":
+                Filter.ToggleOpen(Column);
+                await OnFilterChanged.InvokeAsync();
+                break;
+            case "Escape":
+                Filter.Cancel(Column);
+                await OnFilterChanged.InvokeAsync();
+                break;
+        }
+    }
+}

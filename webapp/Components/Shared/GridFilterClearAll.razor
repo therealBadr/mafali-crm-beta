@@ -1,0 +1,33 @@
+<div class="grid-filter-chip-row @(Filter.HasAny ? "" : "grid-filter-chip-row-empty")">
+    @if (Filter.HasAny)
+    {
+        @foreach (var (column, label, query) in Filter.ActiveChips)
+        {
+            <span class="grid-filter-chip">
+                @label: @query
+                <span class="grid-filter-chip-remove" @onclick="() => Remove(column)">✕</span>
+            </span>
+        }
+        @if (Filter.ActiveCount > 1)
+        {
+            <button type="button" class="grid-filter-clear-all" @onclick="ClearAll">Tout effacer</button>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public required GridFilterState Filter { get; set; }
+    [Parameter, EditorRequired] public required EventCallback OnFilterChanged { get; set; }
+
+    private async Task Remove(string column)
+    {
+        Filter.RemoveColumn(column);
+        await OnFilterChanged.InvokeAsync();
+    }
+
+    private async Task ClearAll()
+    {
+        Filter.ClearAll();
+        await OnFilterChanged.InvokeAsync();
+    }
+}

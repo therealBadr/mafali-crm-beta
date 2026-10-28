@@ -1,0 +1,80 @@
+@page "/historique-connexions"
+@attribute [Authorize(Roles = "admin")]
+@inject UserService UserSvc
+
+<PageTitle>Historique des Connexions</PageTitle>
+
+<div class="page page-flush wb">
+<div class="toolbar">
+    <span class="title">Historique des Connexions</span>
+</div>
+
+@if (Error is not null)
+{
+    <div class="alert">@Error</div>
+}
+
+@if (Loading)
+{
+    <p class="dimmed">Chargement…</p>
+}
+else
+{
+    <div class="grid-group">
+    <GridFilterClearAll Filter="Filter" OnFilterChanged="StateHasChanged" />
+    <div class="table-wrap">
+        <div class="header-row">
+            <div class="cell @Sort.CssClass("login")" @onclick='() => Sort.Toggle("login")'>
+                Login @Sort.ArrowFor("login")
+                <ColumnFilterIcon Column="login" Label="Login" Filter="Filter" OnFilterChanged="StateHasChanged" />
+            </div>
+            <div class="cell @Sort.CssClass("date")" style="flex: 0 0 200px;" @onclick='() => Sort.Toggle("date")'>
+                Date et Heure @Sort.ArrowFor("date")
+                <ColumnFilterIcon Column="date" Label="Date et Heure" Filter="Filter" OnFilterChanged="StateHasChanged" />
+            </div>
+        </div>
+        @foreach (var h in Sorted)
+        {
+            <div class="row" style="cursor: default;">
+                <div class="cell">@h.Login</div>
+                <div class="cell" style="flex: 0 0 200px;">@h.LoggedInAt.ToString("dd/MM/yyyy HH:mm:ss")</div>
+            </div>
+        }
+    </div>
+    </div>
+    <p class="count">@Items.Count enregistrements (200 max.)</p>
+}
+</div>
+
+@code {
+    private List<LoginHistory> Items = new();
+    private bool Loading = true;
+    private string? Error;
+    private readonly SortState Sort = new();
+    private readonly GridFilterState Filter = new();
+
+    private List<LoginHistory> Sorted => GridSort.Apply(GridFilter.Apply(Items, Filter, GetSortText), Sort, GetSortText);
+
+    private static string GetSortText(LoginHistory h, string column) => column switch
+    {
+        "login" => h.Login ?? "",
+        "date" => h.LoggedInAt.ToString("dd/MM/yyyy HH:mm:ss"),
+        _ => "",
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            Items = await UserSvc.GetLoginHistoryAsync();
+        }
+        catch (Exception ex)
+        {
+            Error = FriendlyError.ToUserMessage(ex);
+        }
+        finally
+        {
+            Loading = false;
+        }
+    }
+}

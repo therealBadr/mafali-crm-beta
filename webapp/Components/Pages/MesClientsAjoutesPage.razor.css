@@ -1,0 +1,12 @@
+.row-refused {
+    cursor: default;
+}
+
+.row-refused:hover {
+    background: #ffffff;
+}
+
+.row-refused:nth-child(even),
+.row-refused:nth-child(even):hover {
+    background: var(--row-alt);
+}

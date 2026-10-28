@@ -1,0 +1,1583 @@
+﻿@page "/parcours-client"
+@using System.Text.Json
+@using PaysModel = MafaliCrm.Web.Models.Pays
+@inject ClientService ClientSvc
+@inject ClientFilterService ClientFilterSvc
+@inject FiltreOperatriceService FiltreSvc
+@inject HistoriqueService HistoriqueSvc
+@inject CaService CaSvc
+@inject FamilleService FamilleSvc
+@inject FranchiseService FranchiseSvc
+@inject PaysService PaysSvc
+@inject BonCommandeTemplateService BcTemplateSvc
+@inject ClientValidationService ValidationSvc
+@inject CurrentUserService CurrentUser
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject UserClock Clock
+@implements IAsyncDisposable
+
+<PageTitle>@(Client?.RaisonSociale?.Trim() is { Length: > 0 } clientName ? $"{clientName} – Parcours Client" : "Parcours Client")</PageTitle>
+
+<div class="pc-page page-flush">
+@if (Loading)
+{
+    <p class="dimmed">Chargement…</p>
+}
+else if (Error is not null && Client is null)
+{
+    <div class="alert">@Error</div>
+}
+else if (Client is not null)
+{
+    <div class="pc-topbar">
+        <div class="pc-topbar-group">
+            <span class="pc-title">Parcours Client</span>
+            <label>Identifiant Client :</label>
+            <input class="text-input pc-id" value="@Client.CleOpl" disabled />
+        </div>
+        <div class="pc-topbar-group">
+            <span class="pc-position">@(CurrentIndex + 1) / @ClientIds.Count</span>
+            <button class="btn btn-outline pc-nav-arrow" @onclick="GoFirst" title="Premier">|&lt;</button>
+            <button class="btn btn-outline pc-nav-arrow" @onclick="GoPrevious" title="Précédent">&lt;</button>
+            <button class="btn btn-outline pc-nav-arrow" @onclick="GoNext" title="Suivant">&gt;</button>
+            <button class="btn btn-outline pc-nav-arrow" @onclick="GoLast" title="Dernier">&gt;|</button>
+            <input class="text-input pc-goto" type="number" min="1" max="@ClientIds.Count"
+                   @bind-value="GoToInput" @bind-value:event="oninput"
+                   placeholder="N°" title="Aller à la position N°" @onkeydown="OnGoToKeyDown" />
+            <button class="btn btn-outline" @onclick="GoToPosition" title="Aller à cette position">Aller</button>
+            @if (InfoMessage is not null)
+            {
+                <span class="result-count">@InfoMessage</span>
+            }
+        </div>
+        <div class="pc-topbar-group">
+            <label>Etat Client</label>
+            <select class="text-input pc-select-sm" value="@(Client.EtatClient == "1" ? "1" : "2")" disabled="@MajDisabled"
+                    @onchange="e => Client!.EtatClient = e.Value?.ToString()">
+                <option value="1">Client</option>
+                <option value="2">Prospect</option>
+            </select>
+            <label class="checkbox-label" style="margin-bottom: 0;">
+                <input type="checkbox" checked="@Client.Bloque" disabled="@IsCommercial" @onchange="e => Client!.Bloque = (bool)(e.Value ?? false)" />
+                Bloqué
+            </label>
+            @if (Client.Bloque)
+            {
+                <span class="badge badge-gray">Enregistrement bloqué</span>
+            }
+            @if (Client.ValidationStatus == "pending")
+            {
+                <span class="badge badge-info">Non validé</span>
+            }
+        </div>
+    </div>
+
+    @if (Error is not null)
+    {
+        <div class="alert">@Error</div>
+    }
+
+    <div class="pc-body-wrap">
+    <div class="pc-body">
+    <div class="pc-cols-pair">
+        <div class="pc-col pc-col-identite">
+            <h4 class="pc-col-title">Identité / Adresse</h4>
+            <div class="pc-field">
+                <label>Type de Famille :</label>
+                <select class="text-input" value="@(Client.Famille ?? "")" disabled="@InterModifClientDisabled"
+                        @onchange="e => Client!.Famille = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value.ToString()">
+                    <option value="">—</option>
+                    @foreach (var f in FamilleOptions)
+                    {
+                        <option value="@f">@f</option>
+                    }
+                </select>
+            </div>
+            <div class="pc-field">
+                <label>Raison Sociale</label>
+                <input class="text-input" maxlength="60" value="@Client.RaisonSociale" disabled="@InterModifClientDisabled"
+                       @oninput="e => Client!.RaisonSociale = e.Value?.ToString()" />
+            </div>
+            <div class="pc-field-row">
+                <div class="pc-field">
+                    <label>Complement</label>
+                    <input class="text-input" maxlength="60" value="@Client.Complement" disabled="@InterModifClientDisabled"
+                           @oninput="e => Client!.Complement = e.Value?.ToString()" />
+                </div>
+                <div class="pc-field">
+                    <label>Rue</label>
+                    <input class="text-input" maxlength="60" value="@Client.Rue" disabled="@InterModifClientDisabled"
+                           @oninput="e => Client!.Rue = e.Value?.ToString()" />
+                </div>
+            </div>
+            <div class="pc-field-row">
+                <div class="pc-field">
+                    <label>Localisation 1</label>
+                    <input class="text-input" maxlength="60" value="@Client.Localisation1" disabled="@InterModifClientDisabled"
+                           @oninput="e => Client!.Localisation1 = e.Value?.ToString()" />
+                </div>
+                <div class="pc-field">
+                    <label>Localisation 2</label>
+                    <input class="text-input" maxlength="60" value="@Client.Localisation2" disabled="@InterModifClientDisabled"
+                           @oninput="e => Client!.Localisation2 = e.Value?.ToString()" />
+                </div>
+            </div>
+            <div class="pc-field-row">
+                <div class="pc-field">
+                    <label>Code Postal</label>
+                    <input class="text-input" maxlength="5" value="@Client.Cp" disabled="@InterModifClientDisabled"
+                           @oninput="e => Client!.Cp = e.Value?.ToString()" />
+                </div>
+                <div class="pc-field" style="flex: 2;">
+                    <label>Ville</label>
+                    <input class="text-input" maxlength="40" value="@Client.Ville" disabled="@InterModifClientDisabled"
+                           @oninput="e => Client!.Ville = e.Value?.ToString()" />
+                </div>
+            </div>
+            <div class="pc-field-row">
+                <div class="pc-field">
+                    <label>Pays</label>
+                    <select class="text-input" value="@(Client.Pays ?? "")" disabled="@InterModifClientDisabled"
+                            @onchange="e => Client!.Pays = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value.ToString()">
+                        <option value="">—</option>
+                        @foreach (var p in PaysOptions)
+                        {
+                            <option value="@p">@p</option>
+                        }
+                    </select>
+                </div>
+                <div class="pc-field" style="flex: 2;">
+                    <label>Magasin Principal</label>
+                    <input class="text-input" maxlength="50" value="@Client.MagasinPrincipal" disabled="@InterModifClientDisabled"
+                           @oninput="e => Client!.MagasinPrincipal = e.Value?.ToString()" />
+                </div>
+            </div>
+            @if (!IsCommercial)
+            {
+                <div class="pc-field-row">
+                    <div class="pc-field" style="flex: 2;">
+                        <label>État du Magasin</label>
+                        <select class="text-input" value="@(Client.MagasinFerme ?? "")" disabled="@InterModifClientDisabled"
+                                @onchange="e => Client!.MagasinFerme = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value.ToString()">
+                            <option value="">Ouvert</option>
+                            <option value="Fermé temporairement">Fermé temporairement</option>
+                            <option value="Fermé définitivement">Fermé définitivement</option>
+                        </select>
+                    </div>
+                </div>
+            }
+            <div class="pc-field-row pc-franchise-row">
+                <div class="pc-field-pair">
+                    <div class="pc-field">
+                        <label>Franchise</label>
+                        <select class="text-input" value="@(Client.Franchise ?? "")" disabled="@InterModifClientDisabled"
+                                @onchange="e => Client!.Franchise = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value.ToString()">
+                            <option value="">—</option>
+                            @foreach (var f in FranchiseOptions)
+                            {
+                                <option value="@f">@f</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="pc-field pc-adherent-field">
+                        <label>N° Adhérent</label>
+                        <input class="text-input" maxlength="20" value="@Client.NAdherent" disabled="@InterModifClientDisabled"
+                               @oninput="e => Client!.NAdherent = e.Value?.ToString()" />
+                    </div>
+                </div>
+                <div class="pc-field-pair">
+                    <div class="pc-field">
+                        <label>Franchise 2</label>
+                        <select class="text-input" value="@(Client.Franchise2 ?? "")" disabled="@InterModifClientDisabled"
+                                @onchange="e => Client!.Franchise2 = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value.ToString()">
+                            <option value="">—</option>
+                            @foreach (var f in FranchiseOptions)
+                            {
+                                <option value="@f">@f</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="pc-field pc-adherent-field">
+                        <label>N° Adhérent 2</label>
+                        <input class="text-input" maxlength="20" value="@Client.NAdherent2" disabled="@InterModifClientDisabled"
+                               @oninput="e => Client!.NAdherent2 = e.Value?.ToString()" />
+                    </div>
+                </div>
+            </div>
+            <div class="pc-field-row pc-franchise-row">
+                <div class="pc-field-pair">
+                    <div class="pc-field">
+                        <label>Franchise 3</label>
+                        <select class="text-input" value="@(Client.Franchise3 ?? "")" disabled="@InterModifClientDisabled"
+                                @onchange="e => Client!.Franchise3 = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value.ToString()">
+                            <option value="">—</option>
+                            @foreach (var f in FranchiseOptions)
+                            {
+                                <option value="@f">@f</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="pc-field pc-adherent-field">
+                        <label>N° Adhérent 3</label>
+                        <input class="text-input" maxlength="20" value="@Client.NAdherent3" disabled="@InterModifClientDisabled"
+                               @oninput="e => Client!.NAdherent3 = e.Value?.ToString()" />
+                    </div>
+                </div>
+                <div class="pc-field-pair">
+                    <div class="pc-field">
+                        <label>Franchise 4</label>
+                        <select class="text-input" value="@(Client.Franchise4 ?? "")" disabled="@InterModifClientDisabled"
+                                @onchange="e => Client!.Franchise4 = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value.ToString()">
+                            <option value="">—</option>
+                            @foreach (var f in FranchiseOptions)
+                            {
+                                <option value="@f">@f</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="pc-field pc-adherent-field">
+                        <label>N° Adhérent 4</label>
+                        <input class="text-input" maxlength="20" value="@Client.NAdherent4" disabled="@InterModifClientDisabled"
+                               @oninput="e => Client!.NAdherent4 = e.Value?.ToString()" />
+                    </div>
+                </div>
+            </div>
+            <div class="pc-field pc-note-field">
+                <label>Notes :</label>
+                <textarea class="text-input pc-note" value="@Client.Note" disabled="@(!InterModifNote)"
+                          @oninput="e => Client!.Note = e.Value?.ToString()"></textarea>
+            </div>
+            <label class="checkbox-label pc-note-modif">
+                <input type="checkbox" checked="@InterModifNote" disabled="@BlockedGate"
+                       @onchange="e => InterModifNote = (bool)(e.Value ?? false)" />
+                Modifier la Note
+            </label>
+        </div>
+
+        <div class="pc-col">
+            <h4 class="pc-col-title">Contact / Opération en cours</h4>
+            <div class="pc-field-row">
+                <div class="pc-field">
+                    <label>Assistante Commerciale :</label>
+                    <input class="text-input" value="@Client.AssistanteCommercial" disabled />
+                </div>
+                <div class="pc-field">
+                    <label>Responsable Achats :</label>
+                    <input class="text-input" maxlength="50" value="@Client.ResponsableAchat" disabled="@MajDisabled"
+                           @oninput="e => Client!.ResponsableAchat = e.Value?.ToString()" />
+                </div>
+            </div>
+            <div class="pc-field-row">
+                <div class="pc-field" style="flex: 2;">
+                    <label>Telephone :</label>
+                    <input class="text-input pc-phone-primary" maxlength="20" value="@Client.Telephone" disabled="@MajDisabled"
+                           placeholder="@CurrentMask" @oninput="e => Client!.Telephone = e.Value?.ToString()" />
+                </div>
+                <div class="pc-field">
+                    <label>Indicatif</label>
+                    <input class="text-input" value="@CurrentIndicatif" disabled />
+                </div>
+            </div>
+            <div class="pc-field">
+                <label>Telephone Bis</label>
+                <input class="text-input" maxlength="20" value="@Client.TelBis"
+                       @oninput="e => Client!.TelBis = e.Value?.ToString()" />
+            </div>
+            <div class="pc-field-row">
+                <div class="pc-field">
+                    <label>Portable</label>
+                    <input class="text-input" maxlength="20" value="@Client.Portable" disabled="@MajDisabled"
+                           @oninput="e => Client!.Portable = e.Value?.ToString()" />
+                </div>
+            </div>
+            <div class="pc-field-row">
+                <div class="pc-field">
+                    <label>Opération :</label>
+                    <select class="text-input" value="@(Client.OpEnCours ?? "")" disabled="@MajDisabled" @onchange="OnOperationChange">
+                        <option value="">—</option>
+                        <option value="A Rappeler Mois">A Rappeler Mois</option>
+                        <option value="A Rappeler Date">A Rappeler Date</option>
+                        <option value="A Rappeler Date Heure">A Rappeler Date Heure</option>
+                        <option value="Pas Intéressé">Pas Intéressé</option>
+                        <option value="Vente en Cours">Vente en Cours</option>
+                        <option value="Production">Production</option>
+                    </select>
+                </div>
+                <div class="pc-field">
+                    <label>Status de la Vente :</label>
+                    <select class="text-input" value="@(Client.StatusVente ?? "-1")" disabled="@StatusDisabled" @onchange="OnStatusChange">
+                        <option value="-1">—</option>
+                        <option value="Devis en cours">Devis</option>
+                        <option value="Vente (BAT Original)">BAT</option>
+                        <option value="Vente (BAT Signé)">BAT signé</option>
+                        <option value="Vente (Bon de Commande)">Bon de commande</option>
+                        <option value="Vente Annulée">Vente Annulée</option>
+                        <option value="Production">Production</option>
+                    </select>
+                </div>
+            </div>
+            @if (ShowProduction)
+            {
+                <div class="pc-field">
+                    <label>Production</label>
+                    <select class="text-input" value="@(Client.Production ?? "")" disabled="@MajDisabled"
+                            @onchange="e => Client!.Production = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value.ToString()">
+                        <option value="">—</option>
+                        @foreach (var s in ProductionStages)
+                        {
+                            <option value="@s">@s</option>
+                        }
+                    </select>
+                </div>
+            }
+            <div class="pc-field-row">
+                <div class="pc-field">
+                    <label>Date Rappel :</label>
+                    <DateInput Value="Client!.DateRappel" ValueChanged="v => Client!.DateRappel = v" Disabled="MajDisabled" />
+                </div>
+                <div class="pc-field">
+                    <label>Heure Rappel :</label>
+                    <TimeInput Value="Client!.HeureRappel" ValueChanged="v => Client!.HeureRappel = v" Disabled="MajDisabled" />
+                </div>
+            </div>
+            <label class="checkbox-label">
+                <input type="checkbox" checked="@Client.RappelRdv" @onchange="e => Client!.RappelRdv = (bool)(e.Value ?? false)" />
+                Rappel RDV
+            </label>
+            <div class="pc-field">
+                <label>Statut Client :</label>
+                <select class="text-input" value="@(Client.StatutsClients ?? "-1")" disabled="@InterModifClientDisabled"
+                        @onchange="e => Client!.StatutsClients = e.Value?.ToString()">
+                    <option value="-1">—</option>
+                    <option value="Payés">Payés</option>
+                    <option value="Impayés">Impayés</option>
+                    <option value="Bloqués">Bloqués</option>
+                </select>
+            </div>
+            <div class="pc-field">
+                <label>Email</label>
+                <input class="text-input" type="email" maxlength="50" value="@Client.Email" disabled="@InterModifClientDisabled"
+                       @oninput="e => Client!.Email = e.Value?.ToString()" />
+            </div>
+            <div class="pc-field">
+                <label>Email 2</label>
+                <input class="text-input" type="email" maxlength="50" value="@Client.Email2" disabled="@InterModifClientDisabled"
+                       @oninput="e => Client!.Email2 = e.Value?.ToString()" />
+            </div>
+            @if (!IsCommercial)
+            {
+                <label class="checkbox-label">
+                    <input type="checkbox" checked="@Client.PasEmailing" disabled="@InterModifClientDisabled"
+                           @onchange="e => Client!.PasEmailing = (bool)(e.Value ?? false)" />
+                    Pas d'Emailing
+                </label>
+            }
+            <a href="/recherche-client" target="_blank" class="btn btn-default pc-search-client">
+                Rechercher un Client
+            </a>
+        </div>
+
+    </div>
+
+        <div class="pc-col">
+            <h4 class="pc-col-title">Chiffre d'Affaire</h4>
+            <div class="pc-ca-note-row">
+                <div class="pc-ca-panel">
+                    <div class="pc-ca-list">
+                        @if (CaList.Count == 0)
+                        {
+                            <p class="dimmed" style="padding: 8px;">Aucun chiffre d'affaire enregistré.</p>
+                        }
+                        else
+                        {
+                            @foreach (var ca in CaList)
+                            {
+                                <div class="pc-ca-row">
+                                    <span>@ca.Annee</span>
+                                    <span>---&gt;</span>
+                                    <span>@(ca.Ca1?.ToString() ?? "0")</span>
+                                </div>
+                            }
+                        }
+                    </div>
+                    <button class="btn btn-default" style="width: 100%; margin-top: 8px;" @onclick="OpenCaModal" disabled="@MajDisabled">
+                        Ajout/Modif. CA
+                    </button>
+                </div>
+                <div class="pc-field pc-note-perm-field">
+                    <label>Note Permanente</label>
+                    <textarea class="text-input pc-note-perm" disabled="@InterModifClientDisabled"
+                              @oninput="e => Client!.NotePerm = e.Value?.ToString()">@Client.NotePerm</textarea>
+                </div>
+            </div>
+            <label class="checkbox-label" style="margin-top: 12px;">
+                <input type="checkbox" checked="@InterMajClient" disabled="@BlockedGate"
+                       @onchange="e => InterMajClient = (bool)(e.Value ?? false)" />
+                Mettre à jour les informations du client
+            </label>
+            <div class="pc-field-row" style="margin-top: 12px;">
+                <div class="pc-field">
+                    <label>SIRET</label>
+                    <input class="text-input" maxlength="14" value="@Client.Siret" disabled="@InterModifClientDisabled"
+                           @oninput="e => Client!.Siret = e.Value?.ToString()" />
+                </div>
+                <div class="pc-field">
+                    <label>SIREN</label>
+                    <input class="text-input" maxlength="9" value="@Client.Siren" disabled="@InterModifClientDisabled"
+                           @oninput="e => Client!.Siren = e.Value?.ToString()" />
+                </div>
+            </div>
+            <div class="pc-field-row">
+                <div class="pc-field">
+                    <label>TVA</label>
+                    <input class="text-input" maxlength="20" value="@Client.Tva" disabled="@InterModifClientDisabled"
+                           @oninput="e => Client!.Tva = e.Value?.ToString()" />
+                </div>
+            </div>
+            <div class="pc-field">
+                <label class="checkbox-label">
+                    <input type="checkbox" checked="@Client.FacturationElectronique" disabled="@InterModifClientDisabled"
+                           @onchange="e => Client!.FacturationElectronique = (bool)(e.Value ?? false)" />
+                    Facturation Électronique
+                </label>
+            </div>
+        </div>
+    </div>
+    @if (Client.Bloque)
+    {
+        <div class="pc-blocked-overlay">
+            <span class="pc-blocked-text">Enregistrement bloqué</span>
+        </div>
+    }
+    </div>
+
+    <div class="grid-group show-grip">
+    <div class="pc-actions">
+        <button class="btn btn-default" @onclick="Cancel">Annuler modification</button>
+        <button class="btn btn-primary" disabled="@(Submitting || Client.Bloque)" @onclick="OpenApplyConfirm">Appliquer</button>
+        <button class="btn btn-default" @onclick="Close">Fermer</button>
+        <div class="pc-actions-right">
+            <button class="btn btn-default" disabled="@(SelectedHistoId is null)" @onclick="DownloadStoredFile">
+                Voir le Fichier Stocké
+            </button>
+            <button class="btn btn-default" disabled="@(Client.Bloque || BcGenerating)" @onclick="GenerateBonCommande">
+                Générer fichier bon de commande
+            </button>
+            @if (PendingBcBytes is not null)
+            {
+                <button class="btn btn-default" @onclick="RedownloadBonCommande">
+                    Télécharger à nouveau
+                </button>
+            }
+        </div>
+    </div>
+
+    <GridFilterClearAll Filter="HistoFilter" OnFilterChanged="StateHasChanged" />
+    <div class="pc-histo table-wrap">
+        <div style="width: 100%; min-width: @(HistoTotalWidth)px;">
+            <div class="header-row" style="position: sticky; top: 0;" @ref="HistoHeaderRowRef">
+                @foreach (var col in HistoColumns)
+                {
+                    <div class="cell" style="flex: @(HistoCellFlex(col.Key)) @(col.Width)px;">
+                        <span class="col-sort-label @HistoSort.CssClass(col.Key)" @onclick='() => HistoSort.Toggle(col.Key)'>@col.Label @HistoSort.ArrowFor(col.Key)</span>
+                        <ColumnFilterIcon Column="@col.Key" Label="@col.Label" Filter="HistoFilter" OnFilterChanged="StateHasChanged" />
+                        <span class="col-resize-handle" data-col-key="@col.Key"></span>
+                    </div>
+                }
+            </div>
+            @if (HistoList.Count == 0)
+            {
+                <p class="dimmed">Aucun historique pour ce client.</p>
+            }
+            else
+            {
+                <Virtualize Items="SortedHistoList" Context="h" ItemSize="34">
+                    <div class="row @(h.IdHisto == SelectedHistoId ? "selected" : "")" @onclick="() => SelectedHistoId = h.IdHisto">
+                        @foreach (var col in HistoColumns)
+                        {
+                            <div class="cell" style="flex: @(HistoCellFlex(col.Key)) @(col.Width)px;">@GetHistoCellText(h, col.Key)</div>
+                        }
+                    </div>
+                </Virtualize>
+            }
+        </div>
+    </div>
+    </div>
+}
+</div>
+
+@if (ConfirmApplyOpen)
+{
+    <div class="modal-backdrop" @onclick="() => ConfirmApplyOpen = false">
+        <div class="modal" @onclick:stopPropagation="true">
+            <h3>Confirmer</h3>
+            <p class="confirm-text">Etes-vous sûr de vouloir enregistrer les modifications ?</p>
+            <div class="modal-actions">
+                <button class="btn btn-default" @onclick="() => ConfirmApplyOpen = false">Annuler</button>
+                <button class="btn btn-primary" disabled="@Submitting" @onclick="ConfirmApply">Valider</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (ConflictDialogOpen)
+{
+    <div class="modal-backdrop" @onclick="() => ConflictDialogOpen = false">
+        <div class="modal" @onclick:stopPropagation="true">
+            <h3>Conflit détecté</h3>
+            <p class="confirm-text">
+                Ce client a été modifié par quelqu'un d'autre pendant que vous le modifiiez.
+                Voici les champs concernés :
+            </p>
+            <div class="conflict-list">
+                @foreach (var c in Conflicts)
+                {
+                    <div class="conflict-row">
+                        <span class="conflict-field">@c.Field</span>
+                        <span class="conflict-values">Vous : @c.MyValue — Actuel : @c.CurrentValue</span>
+                    </div>
+                }
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-default" @onclick="ReloadAfterConflict">Recharger</button>
+                <button class="btn btn-primary" disabled="@Submitting" @onclick="ForceApply">Écraser quand même</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (MonthsPromptOpen)
+{
+    <div class="modal-backdrop" @onclick="() => MonthsPromptOpen = false">
+        <div class="modal" @onclick:stopPropagation="true">
+            <h3>Rappel</h3>
+            <label>Saisir le nombre de mois avant le rappel :</label>
+            <input class="text-input" type="number" min="1" max="60" value="@MonthsValue"
+                   @oninput="e => MonthsValue = int.TryParse(e.Value?.ToString(), out var v) ? v : MonthsValue" />
+            <div class="modal-actions">
+                <button class="btn btn-default" @onclick="() => MonthsPromptOpen = false">Annuler</button>
+                <button class="btn btn-primary" @onclick="ConfirmMonths">Valider</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (DatePromptOpen)
+{
+    <div class="modal-backdrop" @onclick="() => DatePromptOpen = false">
+        <div class="modal" @onclick:stopPropagation="true">
+            <h3>Rappel</h3>
+            <label>Saisir la date de Rappel :</label>
+            <DateInput Value="DatePromptValue" ValueChanged="v => DatePromptValue = v ?? DatePromptValue" />
+            <label>Saisir l'heure de Rappel :</label>
+            <TimeInput Value="TimePromptValue" ValueChanged="v => TimePromptValue = v ?? TimePromptValue" />
+            <div class="modal-actions">
+                <button class="btn btn-default" @onclick="() => DatePromptOpen = false">Annuler</button>
+                <button class="btn btn-primary" @onclick="ConfirmDatePrompt">Valider</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (AttachFilePromptOpen)
+{
+    <div class="modal-backdrop" @onclick="CancelAttachPrompt">
+        <div class="modal" @onclick:stopPropagation="true">
+            <h3>Fichier requis</h3>
+            <p class="confirm-text">
+                Un fichier doit être joint pour le statut « @Client?.StatusVente ».
+            </p>
+            <label class="btn btn-primary" for="fic-stk-file-input">Choisir un fichier</label>
+            <InputFile id="fic-stk-file-input" style="display:none" OnChange="HandleAttachmentFile" />
+            <div class="modal-actions">
+                <button class="btn btn-default" @onclick="CancelAttachPrompt">Annuler</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (BcOpenPromptOpen)
+{
+    <div class="modal-backdrop" @onclick="() => BcOpenPromptOpen = false">
+        <div class="modal" @onclick:stopPropagation="true">
+            <h3>Bon de Commande</h3>
+            <p class="confirm-text">Fichier généré dans « @BcSuccessFolder ». Voulez-vous l'ouvrir ?</p>
+            <div class="modal-actions">
+                <button class="btn btn-default" @onclick="() => BcOpenPromptOpen = false">Non</button>
+                <button class="btn btn-primary" @onclick="OpenGeneratedBc">Oui</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (CaModalOpen && !CaConflictDialogOpen)
+{
+    <div class="modal-backdrop" @onclick="() => CaModalOpen = false">
+        <div class="modal" style="width: 560px; max-width: 90vw;" @onclick:stopPropagation="true">
+            <h3>Chiffre d'Affaire</h3>
+
+            <GridFilterClearAll Filter="CaFilter" OnFilterChanged="StateHasChanged" />
+            <div class="table-wrap" style="max-height: 220px; border: 1px solid var(--border-light); border-radius: 4px; margin-bottom: 12px;">
+                <div class="header-row" style="position: sticky; top: 0;">
+                    <div class="cell @CaSort.CssClass("cle_opl")" style="flex: 0 0 90px;" @onclick='() => CaSort.Toggle("cle_opl")'>
+                        N° Client @CaSort.ArrowFor("cle_opl")
+                        <ColumnFilterIcon Column="cle_opl" Label="N° Client" Filter="CaFilter" OnFilterChanged="StateHasChanged" />
+                    </div>
+                    <div class="cell @CaSort.CssClass("annee")" style="flex: 0 0 90px;" @onclick='() => CaSort.Toggle("annee")'>
+                        Année @CaSort.ArrowFor("annee")
+                        <ColumnFilterIcon Column="annee" Label="Année" Filter="CaFilter" OnFilterChanged="StateHasChanged" />
+                    </div>
+                    <div class="cell @CaSort.CssClass("ca")" style="flex: 1;" @onclick='() => CaSort.Toggle("ca")'>
+                        Chiffre d'Affaire @CaSort.ArrowFor("ca")
+                        <ColumnFilterIcon Column="ca" Label="Chiffre d'Affaire" Filter="CaFilter" OnFilterChanged="StateHasChanged" />
+                    </div>
+                </div>
+                @if (CaList.Count == 0)
+                {
+                    <p class="dimmed">Aucun chiffre d'affaire enregistré.</p>
+                }
+                else
+                {
+                    @foreach (var ca in SortedCaList)
+                    {
+                        <div class="row @(ca.IdCa == CaSelectedIdCa ? "selected" : "")" @onclick="() => CaSelectedIdCa = ca.IdCa">
+                            <div class="cell" style="flex: 0 0 90px;">@ca.CleOpl</div>
+                            <div class="cell" style="flex: 0 0 90px;">@ca.Annee</div>
+                            <div class="cell" style="flex: 1;">@(ca.Ca1?.ToString() ?? "0")</div>
+                        </div>
+                    }
+                }
+            </div>
+
+            @if (CaEditFormOpen)
+            {
+                <div class="pc-field-row">
+                    <div class="pc-field">
+                        <label>Année</label>
+                        <input class="text-input" type="number" value="@CaEditAnnee"
+                               @oninput="e => CaEditAnnee = int.TryParse(e.Value?.ToString(), out var v) ? v : 0" />
+                    </div>
+                    <div class="pc-field">
+                        <label>Chiffre d'affaire</label>
+                        <input class="text-input" type="number" value="@CaEditMontant"
+                               @oninput="e => CaEditMontant = int.TryParse(e.Value?.ToString(), out var v) ? v : null" />
+                    </div>
+                </div>
+                @if (CaError is not null)
+                {
+                    <div class="alert">@CaError</div>
+                }
+                <div class="modal-actions" style="margin-bottom: 10px;">
+                    <button class="btn btn-default" @onclick="() => CaEditFormOpen = false">Annuler</button>
+                    <button class="btn btn-primary" disabled="@Submitting" @onclick="ConfirmCaEdit">Valider</button>
+                </div>
+            }
+            else
+            {
+                <div class="modal-actions" style="justify-content: flex-start; margin-bottom: 10px;">
+                    <button class="btn btn-primary" @onclick="OpenCaNew">Nouveau</button>
+                    <button class="btn btn-default" disabled="@(CaSelectedIdCa is null)" @onclick="OpenCaEdit">Modifier</button>
+                    <button class="btn btn-default" disabled="@(CaSelectedIdCa is null)" @onclick="() => CaConfirmDeleteOpen = true">Supprimer</button>
+                </div>
+            }
+
+            <div class="modal-actions">
+                <button class="btn btn-default" @onclick="() => CaModalOpen = false">Fermer</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (CaConfirmDeleteOpen)
+{
+    <div class="modal-backdrop" @onclick="() => CaConfirmDeleteOpen = false">
+        <div class="modal" @onclick:stopPropagation="true">
+            <h3>Confirmer</h3>
+            <p class="confirm-text">Voulez-vous vraiment Supprimer ce CA ?</p>
+            <div class="modal-actions">
+                <button class="btn btn-default" @onclick="() => CaConfirmDeleteOpen = false">Annuler</button>
+                <button class="btn btn-primary" disabled="@Submitting" @onclick="ConfirmCaDelete">Supprimer</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (CaConflictDialogOpen)
+{
+    <div class="modal-backdrop" @onclick="() => CaConflictDialogOpen = false">
+        <div class="modal" @onclick:stopPropagation="true">
+            <h3>Conflit détecté</h3>
+            <p class="confirm-text">
+                Ce chiffre d'affaire a été modifié par quelqu'un d'autre pendant que vous le modifiiez.
+                Voici les champs concernés :
+            </p>
+            <div class="conflict-list">
+                @foreach (var c in CaConflicts)
+                {
+                    <div class="conflict-row">
+                        <span class="conflict-field">@c.Field</span>
+                        <span class="conflict-values">Vous : @c.MyValue — Actuel : @c.CurrentValue</span>
+                    </div>
+                }
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-default" @onclick="ReloadCaAfterConflict">Recharger</button>
+                <button class="btn btn-primary" disabled="@Submitting" @onclick="ForceApplyCa">Écraser quand même</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private static readonly string[] ProductionStages =
+    {
+        "En test", "Test couleur valide date", "A imprimer", "imprimé",
+        "Calandré", "Conditionné", "Facture", "Livré",
+    };
+
+    private class ColumnDef
+    {
+        public string Key { get; }
+        public string Label { get; }
+        public int Width { get; set; }
+
+        public ColumnDef(string key, string label, int width)
+        {
+            Key = key;
+            Label = label;
+            Width = width;
+        }
+    }
+
+    private readonly List<ColumnDef> HistoColumns = new()
+    {
+        new("date_saisie", "Date Saisie", 130),
+        new("heure_saisie", "Heure Saisie", 110),
+        new("assistante_commercial", "Assistante Commerciale", 210),
+        new("date_rappel", "Date Rappel", 130),
+        new("heure_rappel", "Heure Rappel", 125),
+        new("operation", "Opération", 220),
+        new("status_vente", "Status Vente", 140),
+        new("note", "Note", 260),
+    };
+
+    private int HistoTotalWidth => HistoColumns.Sum(c => c.Width);
+
+    private static string HistoCellFlex(string key) => key == "note" ? "1 1" : "0 0";
+
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "mode")]
+    public string? Mode { get; set; }
+
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "assistante")]
+    public string? QueryAssistante { get; set; }
+
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "filtre")]
+    public string? QueryFiltre { get; set; }
+
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "criteria")]
+    public string? QueryCriteria { get; set; }
+
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "start")]
+    public long? Start { get; set; }
+
+    private List<long> ClientIds = new();
+    private int CurrentIndex;
+    private FranceOptique? Client;
+    private ParcoursClientInput? Baseline;
+    private List<Ca> CaList = new();
+    private readonly SortState CaSort = new();
+    private readonly GridFilterState CaFilter = new();
+
+    private List<Ca> SortedCaList => GridSort.Apply(GridFilter.Apply(CaList, CaFilter, GetCaSortText), CaSort, GetCaSortText);
+
+    private static string GetCaSortText(Ca ca, string column) => column switch
+    {
+        "cle_opl" => ca.CleOpl.ToString(),
+        "annee" => ca.Annee.ToString(),
+        "ca" => (ca.Ca1?.ToString()) ?? "0",
+        _ => "",
+    };
+    private List<Historique> HistoList = new();
+    private long? SelectedHistoId;
+    private readonly SortState HistoSort = new();
+    private readonly GridFilterState HistoFilter = new();
+
+    private List<Historique> SortedHistoList => GridSort.Apply(GridFilter.Apply(HistoList, HistoFilter, GetHistoCellText), HistoSort, GetHistoCellText);
+
+    private List<string> FamilleOptions = new();
+    private List<string> FranchiseOptions = new();
+    private List<string> PaysOptions = new();
+    private Dictionary<string, PaysModel> PaysByName = new();
+    private string? CurrentLogin;
+
+    private bool InterMajClient;
+    private bool InterModifNote;
+    private bool ShowProduction;
+
+    private bool Loading = true;
+    private bool IsCommercial;
+    private bool Submitting;
+    private string? Error;
+    private string? InfoMessage;
+
+    private bool ConfirmApplyOpen;
+    private bool ConflictDialogOpen;
+    private List<FieldConflict> Conflicts = new();
+    private bool MonthsPromptOpen;
+    private int MonthsValue = 1;
+    private bool DatePromptOpen;
+    private DateOnly DatePromptValue;
+    private TimeOnly TimePromptValue = new(9, 0);
+
+    private const long MaxAttachmentFileSize = 20 * 1024 * 1024;
+    private static readonly HashSet<string> FileAttachStatuses = new()
+    {
+        "Devis en cours", "Vente (BAT Signé)", "Vente (BAT Original)", "Vente (Bon de Commande)",
+    };
+    private bool AttachFilePromptOpen;
+    private string? PreviousStatusVente;
+    private byte[]? PendingAttachmentBytes;
+    private string? PendingAttachmentFileName;
+
+    private bool BcGenerating;
+    private bool BcOpenPromptOpen;
+    private string? BcSuccessFolder;
+    private byte[]? PendingBcBytes;
+    private string? PendingBcFileName;
+
+    private bool CaModalOpen;
+    private long? CaSelectedIdCa;
+    private bool CaEditFormOpen;
+    private bool CaIsNew;
+    private int CaEditAnnee;
+    private int? CaEditMontant;
+    private int? CaEditOriginalAnnee;
+    private bool CaConfirmDeleteOpen;
+    private string? CaError;
+    private CaInput? CaBaseline;
+    private bool CaConflictDialogOpen;
+    private List<FieldConflict> CaConflicts = new();
+
+    private ElementReference HistoHeaderRowRef;
+    private DotNetObjectReference<ParcoursClientPage>? ResizeDotNetRef;
+    private bool ResizeAttached;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!ResizeAttached && !Loading && Client is not null)
+        {
+            ResizeAttached = true;
+            ResizeDotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("mafaliColumnResize.attach", HistoHeaderRowRef, ResizeDotNetRef);
+        }
+    }
+
+    [JSInvokable]
+    public void OnColumnResized(string key, int width)
+    {
+        var col = HistoColumns.FirstOrDefault(c => c.Key == key);
+        if (col is null) return;
+        col.Width = width;
+        StateHasChanged();
+    }
+
+    public class ColumnAutoFitData
+    {
+        public string Header { get; set; } = "";
+        public List<string> Values { get; set; } = new();
+    }
+
+    [JSInvokable]
+    public ColumnAutoFitData GetColumnAutoFitData(string key)
+    {
+        var col = HistoColumns.FirstOrDefault(c => c.Key == key);
+        return new ColumnAutoFitData
+        {
+            Header = col?.Label ?? "",
+            Values = HistoList.Select(item => GetHistoCellText(item, key)).ToList(),
+        };
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (ResizeAttached)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("mafaliColumnResize.detach", HistoHeaderRowRef);
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+        ResizeDotNetRef?.Dispose();
+    }
+
+    private bool BlockedGate => Client?.Bloque ?? false;
+    private bool MajDisabled => BlockedGate;
+    private bool InterModifClientDisabled => BlockedGate || !InterMajClient;
+    private bool StatusDisabled => BlockedGate || (!InterMajClient && Client?.OpEnCours != "Vente en Cours");
+
+    private string? CurrentMask => Client?.Pays is not null && PaysByName.TryGetValue(Client.Pays, out var p) ? p.Masque : null;
+    private string? CurrentIndicatif => Client?.Pays is not null && PaysByName.TryGetValue(Client.Pays, out var p) ? p.Indicatif : null;
+
+    private string ReturnUrl => Mode switch
+    {
+        "filtre" => "/filtres-predefinis",
+        "recherche" => "/recherche-client",
+        "mes-ajouts" => "/mes-clients-ajoutes",
+        _ => "/clients",
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        DatePromptValue = Clock.Today;
+        Loading = true;
+        try
+        {
+            IsCommercial = await CurrentUser.GetRoleAsync() == "commercial";
+            CurrentLogin = await CurrentUser.GetLoginAsync();
+            FamilleOptions = await FamilleSvc.ListAsync();
+            FranchiseOptions = await FranchiseSvc.ListAsync();
+            var paysList = await PaysSvc.ListAsync();
+            PaysOptions = paysList.Select(p => p.NomPays).ToList();
+            PaysByName = paysList.ToDictionary(p => p.NomPays, p => p);
+
+            if (Mode == "filtre" && !string.IsNullOrEmpty(QueryAssistante) && !string.IsNullOrEmpty(QueryFiltre))
+            {
+                var filtres = await FiltreSvc.ListByOperatorAsync(QueryAssistante);
+                var f = filtres.FirstOrDefault(x => x.NomFiltre == QueryFiltre);
+                if (f is not null)
+                {
+                    try
+                    {
+                        var (rows, _) = await ClientFilterSvc.SearchByFiltreReelAsync(f.FiltreReel ?? "");
+                        ClientIds = rows.Select(r => r.CleOpl).ToList();
+                    }
+                    catch (FormatException)
+                    {
+                        Error = "Ce filtre contient une syntaxe non reconnue et ne peut pas être exécuté.";
+                    }
+                }
+            }
+            else if (Mode == "recherche" && !string.IsNullOrEmpty(QueryCriteria))
+            {
+                var conditions = JsonSerializer.Deserialize<List<Condition>>(QueryCriteria) ?? new();
+                var (rows, _) = await ClientFilterSvc.SearchAsync(conditions);
+                ClientIds = rows.Select(r => r.CleOpl).ToList();
+            }
+            else if (Mode == "mes-ajouts")
+            {
+                var login = await CurrentUser.GetLoginAsync();
+                ClientIds = login is null ? new() : await ValidationSvc.ListIdsByAdderAsync(login);
+                if (ClientIds.Count == 0)
+                {
+                    Error = "Vous n'avez aucun client consultable.";
+                }
+            }
+            else
+            {
+                ClientIds = await ClientSvc.ListIdsAsync();
+            }
+
+            if (ClientIds.Count == 0)
+            {
+                if (Error is null) Error = "Aucun client à afficher.";
+                return;
+            }
+
+            CurrentIndex = Start.HasValue ? ClientIds.IndexOf(Start.Value) : 0;
+            if (CurrentIndex < 0) CurrentIndex = 0;
+
+            await LoadCurrent();
+        }
+        catch (Exception ex)
+        {
+            Error = FriendlyError.ToUserMessage(ex);
+        }
+        finally
+        {
+            Loading = false;
+        }
+    }
+
+    private async Task LoadCurrent()
+    {
+        var id = ClientIds[CurrentIndex];
+        try
+        {
+            Client = await ClientSvc.GetAsync(id);
+            if (Client is null)
+            {
+                Error = "Client introuvable.";
+                return;
+            }
+            Baseline = ParcoursClientInput.FromEntity(Client);
+            if (!string.IsNullOrEmpty(CurrentLogin))
+            {
+                Client.AssistanteCommercial = CurrentLogin;
+            }
+            CaList = await CaSvc.ListByClientAsync(id);
+            HistoList = await HistoriqueSvc.GetForClientAsync(id);
+            SelectedHistoId = null;
+            InterMajClient = false;
+            InterModifNote = false;
+            ShowProduction = Client.StatusVente == "Production";
+            AttachFilePromptOpen = false;
+            PreviousStatusVente = null;
+            PendingAttachmentBytes = null;
+            PendingAttachmentFileName = null;
+            BcOpenPromptOpen = false;
+            BcSuccessFolder = null;
+            PendingBcBytes = null;
+            PendingBcFileName = null;
+            CaModalOpen = false;
+            CaSelectedIdCa = null;
+            CaEditFormOpen = false;
+            Error = null;
+        }
+        catch (Exception ex)
+        {
+            Error = FriendlyError.ToUserMessage(ex);
+        }
+    }
+
+    private async Task GoFirst()
+    {
+        InfoMessage = null;
+        CurrentIndex = 0;
+        await LoadCurrent();
+    }
+
+    private async Task GoPrevious()
+    {
+        if (CurrentIndex <= 0)
+        {
+            InfoMessage = "C'est le premier enregistrement.";
+            return;
+        }
+        InfoMessage = null;
+        CurrentIndex--;
+        await LoadCurrent();
+    }
+
+    private async Task GoNext()
+    {
+        if (CurrentIndex >= ClientIds.Count - 1)
+        {
+            InfoMessage = "C'est le dernier enregistrement.";
+            return;
+        }
+        InfoMessage = null;
+        CurrentIndex++;
+        await LoadCurrent();
+    }
+
+    private async Task GoLast()
+    {
+        InfoMessage = null;
+        CurrentIndex = ClientIds.Count - 1;
+        await LoadCurrent();
+    }
+
+    private int? GoToInput;
+
+    private async Task OnGoToKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await GoToPosition();
+        }
+    }
+
+    private async Task GoToPosition()
+    {
+        if (GoToInput is not { } n || n < 1 || n > ClientIds.Count)
+        {
+            InfoMessage = $"Numéro invalide (1 à {ClientIds.Count}).";
+            return;
+        }
+        InfoMessage = null;
+        CurrentIndex = n - 1;
+        GoToInput = null;
+        await LoadCurrent();
+    }
+
+    private async Task Cancel() => await LoadCurrent();
+
+    private void Close() => Nav.NavigateTo(ReturnUrl);
+
+    private void OnOperationChange(ChangeEventArgs e)
+    {
+        if (Client is null) return;
+        Client.OpEnCours = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value.ToString();
+        switch (Client.OpEnCours)
+        {
+            case "A Rappeler Mois":
+                MonthsValue = 4;
+                MonthsPromptOpen = true;
+                break;
+            case "A Rappeler Date":
+            case "A Rappeler Date Heure":
+                DatePromptValue = Clock.Today;
+                TimePromptValue = new(9, 0);
+                DatePromptOpen = true;
+                break;
+            case "Pas Intéressé":
+                Client.DateRappel = Clock.Today.AddMonths(4);
+                break;
+            case "Production":
+                Client.StatusVente = "Production";
+                ShowProduction = true;
+                break;
+        }
+    }
+
+    private void OnStatusChange(ChangeEventArgs e)
+    {
+        if (Client is null) return;
+        var v = e.Value?.ToString();
+        var previous = Client.StatusVente;
+        Client.StatusVente = v == "-1" ? "-1" : v;
+        ShowProduction = Client.StatusVente == "Production";
+        if (Client.StatusVente == "Vente Annulée")
+        {
+            Client.DateRappel = Clock.Today.AddMonths(4);
+        }
+
+        if (Client.StatusVente is not null && FileAttachStatuses.Contains(Client.StatusVente))
+        {
+            PreviousStatusVente = previous;
+            PendingAttachmentBytes = null;
+            PendingAttachmentFileName = null;
+            AttachFilePromptOpen = true;
+        }
+    }
+
+    private void CancelAttachPrompt()
+    {
+        if (Client is not null)
+        {
+            Client.StatusVente = PreviousStatusVente;
+            ShowProduction = Client.StatusVente == "Production";
+        }
+        AttachFilePromptOpen = false;
+        PendingAttachmentBytes = null;
+        PendingAttachmentFileName = null;
+    }
+
+    private async Task HandleAttachmentFile(InputFileChangeEventArgs e)
+    {
+        Error = null;
+        try
+        {
+            using var buffered = new MemoryStream();
+            await e.File.OpenReadStream(MaxAttachmentFileSize).CopyToAsync(buffered);
+            PendingAttachmentBytes = buffered.ToArray();
+            PendingAttachmentFileName = e.File.Name;
+            AttachFilePromptOpen = false;
+        }
+        catch (IOException)
+        {
+            Error = "Le fichier dépasse la taille maximale autorisée (20 Mo). Choisissez un autre fichier.";
+        }
+    }
+
+    private async Task DownloadStoredFile()
+    {
+        if (SelectedHistoId is null) return;
+        Error = null;
+        var histo = await HistoriqueSvc.GetByIdAsync(SelectedHistoId.Value);
+        if (histo?.FicStk is null || histo.FicStk.Length == 0)
+        {
+            Error = "Aucun fichier n'est associé à cet enregistrement.";
+            return;
+        }
+        using var stream = new MemoryStream(histo.FicStk);
+        using var streamRef = new DotNetStreamReference(stream);
+        var fileName = string.IsNullOrWhiteSpace(histo.FicStkNom) ? $"fichier_{histo.IdHisto}" : histo.FicStkNom;
+        await JS.InvokeVoidAsync("mafaliFileDownload.downloadFileFromStream", fileName, "application/octet-stream", streamRef);
+    }
+
+    private const string XlsxContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+    private static BonCommandeTemplateType? DetectBcTemplateType(string? famille)
+    {
+        if (string.IsNullOrWhiteSpace(famille)) return null;
+        var firstWord = famille.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
+        return firstWord.Equals("Opticien", StringComparison.OrdinalIgnoreCase)
+            ? BonCommandeTemplateType.Optique
+            : BonCommandeTemplateType.Revendeur;
+    }
+
+    private static string SanitizeForFileName(string? raisonSociale)
+    {
+        var name = string.IsNullOrWhiteSpace(raisonSociale) ? "Client" : raisonSociale.Trim();
+        foreach (var c in Path.GetInvalidFileNameChars())
+        {
+            name = name.Replace(c, '-');
+        }
+        const int maxLength = 50;
+        return name.Length > maxLength ? name[..maxLength].TrimEnd() : name;
+    }
+
+    private async Task GenerateBonCommande()
+    {
+        if (Client is null) return;
+        Error = null;
+
+        var type = DetectBcTemplateType(Client.Famille);
+        if (type is null)
+        {
+            Error = "Impossible de déterminer le modèle de Bon de Commande : le champ « Type de Famille » n'est pas renseigné pour ce client.";
+            return;
+        }
+
+        BcGenerating = true;
+        try
+        {
+            var templateBytes = await BcTemplateSvc.GetBytesAsync(type.Value);
+            if (templateBytes is null)
+            {
+                Error = $"Aucun modèle configuré pour « {(type == BonCommandeTemplateType.Optique ? "Optique" : "Revendeur")} ». Contactez un administrateur.";
+                return;
+            }
+
+            var (filled, bcNumber) = await BcTemplateSvc.FillAsync(templateBytes, Client, type.Value);
+            var fileName = $"BC - {bcNumber} - {SanitizeForFileName(Client.RaisonSociale)}.xlsx";
+
+            var supported = await JS.InvokeAsync<bool>("mafaliBonCommandeDestination.isSupported");
+            var folderName = supported ? await JS.InvokeAsync<string?>("mafaliBonCommandeDestination.getCurrentFolderName") : null;
+
+            if (supported && folderName is not null)
+            {
+                using var stream = new MemoryStream(filled);
+                using var streamRef = new DotNetStreamReference(stream);
+                var result = await JS.InvokeAsync<string>("mafaliBonCommandeDestination.writeFile", fileName, streamRef);
+                if (result == "ok")
+                {
+                    PendingBcBytes = filled;
+                    PendingBcFileName = fileName;
+                    BcSuccessFolder = folderName;
+                    BcOpenPromptOpen = true;
+                    return;
+                }
+
+                await DownloadBonCommandeBytes(filled, fileName);
+                InfoMessage = "Fichier téléchargé (le dossier configuré n'était plus accessible — vous pouvez le choisir à nouveau depuis la page Bon de Commande).";
+            }
+            else
+            {
+                await DownloadBonCommandeBytes(filled, fileName);
+                InfoMessage = "Fichier téléchargé.";
+                PendingBcBytes = filled;
+                PendingBcFileName = fileName;
+            }
+        }
+        catch (Exception ex)
+        {
+            Error = FriendlyError.ToUserMessage(ex);
+        }
+        finally
+        {
+            BcGenerating = false;
+        }
+    }
+
+    private async Task OpenGeneratedBc()
+    {
+        BcOpenPromptOpen = false;
+        if (PendingBcBytes is not null && PendingBcFileName is not null)
+        {
+            await DownloadBonCommandeBytes(PendingBcBytes, PendingBcFileName);
+        }
+    }
+
+    private async Task RedownloadBonCommande()
+    {
+        if (PendingBcBytes is not null && PendingBcFileName is not null)
+        {
+            await DownloadBonCommandeBytes(PendingBcBytes, PendingBcFileName);
+        }
+    }
+
+    private async Task DownloadBonCommandeBytes(byte[] bytes, string fileName)
+    {
+        using var stream = new MemoryStream(bytes);
+        using var streamRef = new DotNetStreamReference(stream);
+        await JS.InvokeVoidAsync("mafaliFileDownload.downloadFileFromStream", fileName, XlsxContentType, streamRef);
+    }
+
+    private void ConfirmMonths()
+    {
+        if (Client is not null)
+        {
+            Client.DateRappel = Clock.Today.AddMonths(MonthsValue);
+        }
+        MonthsPromptOpen = false;
+    }
+
+    private void ConfirmDatePrompt()
+    {
+        if (Client is not null)
+        {
+            Client.DateRappel = DatePromptValue;
+            Client.HeureRappel = TimePromptValue;
+        }
+        DatePromptOpen = false;
+    }
+
+    private void OpenApplyConfirm() => ConfirmApplyOpen = true;
+
+    private Task ConfirmApply()
+    {
+        ConfirmApplyOpen = false;
+        return SaveAsync(force: false);
+    }
+
+    private Task ForceApply()
+    {
+        ConflictDialogOpen = false;
+        return SaveAsync(force: true);
+    }
+
+    private Task ReloadAfterConflict()
+    {
+        ConflictDialogOpen = false;
+        Conflicts = new();
+        return LoadCurrent();
+    }
+
+    private async Task SaveAsync(bool force)
+    {
+        if (Client is null || Baseline is null) return;
+        Submitting = true;
+        Error = null;
+        try
+        {
+            var now = Clock.LocalNow;
+            Client.DateSaisie = DateOnly.FromDateTime(now);
+            Client.HeureSaisie = TimeOnly.FromDateTime(now);
+
+            var result = await ClientSvc.UpdateFullWithConflictCheckAsync(Client.CleOpl, Baseline, ParcoursClientInput.FromEntity(Client), force);
+            if (!result.Success)
+            {
+                Conflicts = result.Conflicts;
+                ConflictDialogOpen = true;
+                return;
+            }
+
+            var histo = new HistoriqueInput
+            {
+                DateSaisie = Client.DateSaisie,
+                HeureSaisie = Client.HeureSaisie,
+                DateRappel = Client.DateRappel,
+                HeureRappel = Client.HeureRappel,
+                AssistanteCommercial = Client.AssistanteCommercial,
+                Note = Client.Note,
+                Franchise = Client.Franchise,
+                NAdherent = Client.NAdherent,
+                Franchise2 = Client.Franchise2,
+                NAdherent2 = Client.NAdherent2,
+                Franchise3 = Client.Franchise3,
+                NAdherent3 = Client.NAdherent3,
+                Franchise4 = Client.Franchise4,
+                NAdherent4 = Client.NAdherent4,
+                RaisonSociale = Client.RaisonSociale,
+                Cp = Client.Cp,
+                Ville = Client.Ville,
+                MagasinPrincipal = Client.MagasinPrincipal,
+                StatutsClients = Client.StatutsClients,
+                Operation = Client.OpEnCours switch
+                {
+                    "A Rappeler Mois" or "A Rappeler Date" or "A Rappeler Date Heure" => "A Rappeler le ",
+                    "Pas Intéressé" => $"Non intéressé le {DateOnly.FromDateTime(now):dd/MM/yyyy}, à recontacter le : ",
+                    "Vente en Cours" => "Vente en Cours",
+                    _ => null,
+                },
+                StatusVente = Client.StatusVente is null or "-1" ? null : Client.StatusVente,
+                FicStk = PendingAttachmentBytes,
+                FicStkNom = PendingAttachmentBytes is not null ? PendingAttachmentFileName : null,
+            };
+            await HistoriqueSvc.CreateAsync(Client.CleOpl, histo);
+            PendingAttachmentBytes = null;
+            PendingAttachmentFileName = null;
+
+            if (CurrentIndex < ClientIds.Count - 1)
+            {
+                CurrentIndex++;
+                await LoadCurrent();
+            }
+            else
+            {
+                InfoMessage = "Enregistré. C'est le dernier enregistrement.";
+                await LoadCurrent();
+            }
+        }
+        catch (Exception ex)
+        {
+            Error = FriendlyError.ToUserMessage(ex);
+        }
+        finally
+        {
+            Submitting = false;
+        }
+    }
+
+    private void OpenCaModal()
+    {
+        if (Client is null) return;
+        CaSelectedIdCa = null;
+        CaEditFormOpen = false;
+        CaError = null;
+        CaModalOpen = true;
+    }
+
+    private void OpenCaNew()
+    {
+        CaIsNew = true;
+        CaEditAnnee = Clock.Today.Year;
+        CaEditMontant = null;
+        CaEditOriginalAnnee = null;
+        CaError = null;
+        CaEditFormOpen = true;
+    }
+
+    private void OpenCaEdit()
+    {
+        var selected = CaList.FirstOrDefault(c => c.IdCa == CaSelectedIdCa);
+        if (selected is null) return;
+        CaIsNew = false;
+        CaEditAnnee = selected.Annee;
+        CaEditMontant = selected.Ca1;
+        CaEditOriginalAnnee = selected.Annee;
+        CaBaseline = CaInput.FromEntity(selected);
+        CaError = null;
+        CaEditFormOpen = true;
+    }
+
+    private Task ConfirmCaEdit() => SaveCaAsync(force: false);
+
+    private Task ForceApplyCa()
+    {
+        CaConflictDialogOpen = false;
+        return SaveCaAsync(force: true);
+    }
+
+    private async Task ReloadCaAfterConflict()
+    {
+        CaConflictDialogOpen = false;
+        CaConflicts = new();
+        if (Client is null) return;
+        CaList = await CaSvc.ListByClientAsync(Client.CleOpl);
+        var current = CaList.FirstOrDefault(c => c.Annee == CaEditOriginalAnnee);
+        if (current is null) return;
+        CaEditAnnee = current.Annee;
+        CaEditMontant = current.Ca1;
+        CaEditOriginalAnnee = current.Annee;
+        CaBaseline = CaInput.FromEntity(current);
+    }
+
+    private async Task SaveCaAsync(bool force)
+    {
+        if (Client is null) return;
+        CaError = null;
+        if (CaEditAnnee <= 0)
+        {
+            CaError = "Veuillez entrer l'année.";
+            return;
+        }
+        if (CaEditAnnee is < 1000 or > 9999)
+        {
+            CaError = "Veuillez entrer une année valide.";
+            return;
+        }
+        if (CaEditMontant is null)
+        {
+            CaError = "Veuillez entrer le chiffre d'affaire.";
+            return;
+        }
+
+        Submitting = true;
+        try
+        {
+            if (CaIsNew)
+            {
+                await CaSvc.CreateAsync(Client.CleOpl, CaEditAnnee, CaEditMontant);
+            }
+            else
+            {
+                if (CaBaseline is null) return;
+                var current = new CaInput { Annee = CaEditAnnee, Montant = CaEditMontant };
+                var result = await CaSvc.UpdateWithConflictCheckAsync(Client.CleOpl, CaEditOriginalAnnee!.Value, CaBaseline, current, force);
+                if (!result.Success)
+                {
+                    CaConflicts = result.Conflicts;
+                    CaConflictDialogOpen = true;
+                    return;
+                }
+            }
+            CaList = await CaSvc.ListByClientAsync(Client.CleOpl);
+            CaEditFormOpen = false;
+            CaSelectedIdCa = null;
+        }
+        catch (Exception ex)
+        {
+            CaError = FriendlyError.ToUserMessage(ex);
+        }
+        finally
+        {
+            Submitting = false;
+        }
+    }
+
+    private async Task ConfirmCaDelete()
+    {
+        if (Client is null || CaSelectedIdCa is null) return;
+        var selected = CaList.FirstOrDefault(c => c.IdCa == CaSelectedIdCa);
+        if (selected is null)
+        {
+            CaConfirmDeleteOpen = false;
+            return;
+        }
+
+        Submitting = true;
+        try
+        {
+            await CaSvc.DeleteAsync(Client.CleOpl, selected.Annee);
+            CaList = await CaSvc.ListByClientAsync(Client.CleOpl);
+            CaSelectedIdCa = null;
+            CaConfirmDeleteOpen = false;
+            Error = null;
+        }
+        catch (Exception ex)
+        {
+            Error = FriendlyError.ToUserMessage(ex);
+            CaConfirmDeleteOpen = false;
+        }
+        finally
+        {
+            Submitting = false;
+        }
+    }
+
+    private static string GetHistoCellText(Historique h, string key) => key switch
+    {
+        "date_saisie" => h.DateSaisie?.ToString("dd/MM/yyyy") ?? "",
+        "heure_saisie" => h.HeureSaisie?.ToString("HH:mm") ?? "",
+        "assistante_commercial" => h.AssistanteCommercial ?? "",
+        "date_rappel" => h.DateRappel?.ToString("dd/MM/yyyy") ?? "",
+        "heure_rappel" => h.HeureRappel?.ToString("HH:mm") ?? "",
+        "operation" => h.Operation ?? "",
+        "status_vente" => h.StatusVente ?? "",
+        "note" => h.Note ?? "",
+        "id_histo" => h.IdHisto.ToString(),
+        _ => "",
+    };
+}

@@ -1,0 +1,1 @@
+ALTER TABLE france_optique ADD COLUMN tva VARCHAR(20);

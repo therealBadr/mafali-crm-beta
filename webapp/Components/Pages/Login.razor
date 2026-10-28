@@ -1,0 +1,51 @@
+@page "/login"
+@attribute [AllowAnonymous]
+@layout Layout.BlankLayout
+
+<PageTitle>Connexion</PageTitle>
+
+<div class="login-page">
+    <div class="login-card">
+        <div class="login-brand">
+            <div>
+                <h1>Mafali <span class="login-suffix">CRM</span></h1>
+                <p class="login-sub">Connexion</p>
+            </div>
+        </div>
+
+        @if (Error == "invalid")
+        {
+            <div class="alert">Login ou mot de passe incorrect.</div>
+        }
+        else if (Error == "inactive")
+        {
+            <div class="alert">Ce compte est désactivé.</div>
+        }
+        else if (Error == "locked")
+        {
+            <div class="alert">Trop de tentatives échouées. Réessayez dans 15 minutes.</div>
+        }
+
+        <form method="post" action="login">
+            <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+
+            <label for="login">Login</label>
+            <input class="text-input" type="text" id="login" name="login" required autofocus />
+
+            <label for="password">Mot de passe</label>
+            <input class="text-input" type="password" id="password" name="password" required />
+
+            <button class="btn btn-primary" type="submit" style="width: 100%; margin-top: 8px;">
+                Se connecter
+            </button>
+        </form>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery]
+    private string? Error { get; set; }
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+}

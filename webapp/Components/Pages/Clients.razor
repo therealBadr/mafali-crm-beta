@@ -1,0 +1,704 @@
+@page "/clients"
+@attribute [Authorize(Roles = "admin,assistant")]
+@inject ClientService ClientSvc
+@inject ClientGridQueryService GridSvc
+@inject ClientImportExportService ImportExportSvc
+@inject CurrentUserService CurrentUserSvc
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject UserClock Clock
+@implements IAsyncDisposable
+
+<PageTitle>Clients</PageTitle>
+
+<div class="page page-flush">
+<div class="toolbar">
+    <span class="title">Table des Clients</span>
+    <div class="actions">
+        <button class="btn btn-primary" @onclick="OpenCreate">Nouveau</button>
+        <button class="btn btn-outline" disabled="@(Selected is null)" @onclick="OpenEdit">Modifier</button>
+        <button class="btn btn-outline" disabled="@(Selected is null)" @onclick="OpenDeleteConfirm">Supprimer</button>
+        <button class="btn btn-outline" disabled="@(Selected is null)" @onclick="() => OpenParcours(Selected)">Parcours Client</button>
+        <button class="btn btn-outline" disabled="@ExportingOrImporting" @onclick="Export">@(ExportingOrImporting ? "Export en cours…" : "Exporter")</button>
+        @if (IsAdmin)
+        {
+            <label class="btn btn-outline" for="import-file-input"
+                   style="@(ExportingOrImporting ? "opacity:0.55;cursor:not-allowed;pointer-events:none;" : "")">Importer</label>
+            <InputFile id="import-file-input" style="display:none" OnChange="HandleImportFile" accept=".xlsx" />
+        }
+    </div>
+</div>
+
+<div class="search-bar">
+    <select class="search-input" style="min-width: 200px;" value="@SearchColumn" @onchange="OnSearchColumnChange">
+        @foreach (var col in Columns.Where(c => ClientGridQueryService.FilterableColumns.Contains(c.Key)))
+        {
+            <option value="@col.Key">@col.Label</option>
+        }
+    </select>
+    <input class="search-input" type="text" placeholder="Rechercher…" value="@SearchTerm" @oninput="OnSearchInput" />
+    @if (Searching)
+    {
+        <span class="result-count dimmed">Recherche…</span>
+    }
+    else if (HasActiveFilter)
+    {
+        <span class="result-count">@TotalCount.ToString("N0") / @UnfilteredTotal.ToString("N0") résultats</span>
+    }
+</div>
+
+@if (Error is not null)
+{
+    <div class="alert">@Error</div>
+}
+
+@if (Loading)
+{
+    <p class="dimmed">Chargement…</p>
+}
+else
+{
+    <div class="grid-group">
+    <GridFilterClearAll Filter="Filter" OnFilterChanged="RefreshResults" />
+    <div class="table-wrap" style="overflow-x: auto;" @ref="TableWrapRef">
+        <div style="@GridLayout.WrapperStyle(TotalWidth)">
+            <div class="header-row" style="position: sticky; top: 0;" @ref="HeaderRowRef">
+                @foreach (var col in Columns)
+                {
+                    <div class="cell" style="@GridLayout.ColStyle(col.Width, col == Columns[^1])">
+                        <span class="col-sort-label @Sort.CssClass(col.Key)" @onclick='() => ToggleSort(col.Key)'>@col.Label @Sort.ArrowFor(col.Key)</span>
+                        @if (ClientGridQueryService.FilterableColumns.Contains(col.Key))
+                        {
+                            <ColumnFilterIcon Column="@col.Key" Label="@col.Label" Filter="Filter" OnFilterChanged="RefreshResults" />
+                        }
+                        <span class="col-resize-handle" data-col-key="@col.Key"></span>
+                    </div>
+                }
+            </div>
+            <Virtualize Items="LoadedItems" Context="c" ItemSize="34">
+                <div class="row @(c.CleOpl == Selected ? "selected" : "")"
+                     @onclick="() => Select(c.CleOpl)" @ondblclick="() => OpenParcours(c.CleOpl)">
+                    @foreach (var col in Columns)
+                    {
+                        <div class="cell" style="@GridLayout.ColStyle(col.Width, col == Columns[^1])">
+                            @if (col.Key == "statuts_clients" && StatutBadgeClass(c.StatutsClients) is { Length: > 0 } badgeClass)
+                            {
+                                <span class="badge @badgeClass">@c.StatutsClients</span>
+                            }
+                            else if (col.Key == "validation_status")
+                            {
+                                @if (c.ValidationStatus == "pending")
+                                {
+                                    <span class="badge badge-info">Non validé</span>
+                                }
+                            }
+                            else
+                            {
+                                @GetCellText(c, col.Key)
+                            }
+                        </div>
+                    }
+                </div>
+            </Virtualize>
+        </div>
+    </div>
+    </div>
+    @if (LoadedItems.Count >= MaxLoadedRows && LoadedItems.Count < TotalCount)
+    {
+        <p class="count">
+            @LoadedItems.Count.ToString("N0") sur @TotalCount.ToString("N0") enregistrements
+            (affichage limité — affinez la recherche)
+        </p>
+    }
+    else if (LoadedItems.Count < TotalCount)
+    {
+        <p class="count">@LoadedItems.Count.ToString("N0") sur @TotalCount.ToString("N0") enregistrements</p>
+    }
+    else
+    {
+        <p class="count">@TotalCount.ToString("N0") enregistrements</p>
+    }
+}
+</div>
+
+@if (ImportResultOpen && ImportSummary is not null)
+{
+    <div class="modal-backdrop" @onclick="() => ImportResultOpen = false">
+        <div class="modal" @onclick:stopPropagation="true">
+            <h3>Résultat de l'import</h3>
+            <p class="confirm-text">
+                @ImportSummary.Added ajoutés · @ImportSummary.Modified modifiés ·
+                @ImportSummary.Unchanged inchangés
+            </p>
+            @{ var invalidLines = ImportSummary.InvalidReferenceCounts.Where(kv => kv.Value > 0).ToList(); }
+            @if (invalidLines.Count > 0)
+            {
+                <p class="confirm-text">
+                    Valeurs non reconnues ignorées :
+                    @string.Join(" · ", invalidLines.Select(kv => $"{kv.Key} ({kv.Value})"))
+                </p>
+            }
+            @if (ImportSummary.SkippedRows.Count > 0)
+            {
+                <div class="conflict-list">
+                    @foreach (var line in ImportSummary.SkippedRows)
+                    {
+                        <div class="conflict-row">@line</div>
+                    }
+                </div>
+            }
+            <div class="modal-actions">
+                <button class="btn btn-primary" @onclick="() => ImportResultOpen = false">Fermer</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (ConfirmDeleteOpen)
+{
+    <div class="modal-backdrop" @onclick="CancelDelete">
+        <div class="modal" @onclick:stopPropagation="true">
+            <h3>Confirmer la suppression</h3>
+            <p class="confirm-text">Êtes-vous sûr de vouloir supprimer ce client ?</p>
+            <div class="modal-actions">
+                <button class="btn btn-default" @onclick="CancelDelete">Annuler</button>
+                <button class="btn btn-primary" disabled="@Submitting" @onclick="ConfirmDelete">Supprimer</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (ConfirmExportOpen)
+{
+    <div class="modal-backdrop" @onclick="CancelExport">
+        <div class="modal" @onclick:stopPropagation="true">
+            <h3>Exporter @TotalCount.ToString("N0") clients ?</h3>
+            <p class="confirm-text">
+                Cet export contient @TotalCount.ToString("N0") lignes et prendra environ
+                @ConfirmExportSeconds secondes, pendant lesquelles l'application sera
+                plus lente pour tout le monde.
+            </p>
+            <p class="confirm-text dimmed">
+                Pour un export plus rapide, fermez cette fenêtre et affinez d'abord la
+                recherche ou les filtres de colonne : l'export suit exactement ce qui
+                est affiché.
+            </p>
+            <div class="modal-actions">
+                <button class="btn btn-default" @onclick="CancelExport">Annuler</button>
+                <button class="btn btn-primary" @onclick="ConfirmExport">Exporter quand même</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private class ColumnDef
+    {
+        public string Key { get; }
+        public string Label { get; }
+        public int Width { get; set; }
+
+        public ColumnDef(string key, string label, int width)
+        {
+            Key = key;
+            Label = label;
+            Width = width;
+        }
+    }
+
+    private readonly List<ColumnDef> Columns = new()
+    {
+        new("cle_opl", "Cle Opl", 80),
+        new("famille", "Famille", 140),
+        new("raison_sociale", "Raison Sociale", 200),
+        new("complement", "Complement", 160),
+        new("franchise", "Franchise", 140),
+        new("franchise2", "Franchise 2", 140),
+        new("franchise3", "Franchise 3", 140),
+        new("franchise4", "Franchise 4", 140),
+        new("n_adherent", "N° Adhérent", 110),
+        new("n_adherent2", "N° Adhérent 2", 110),
+        new("n_adherent3", "N° Adhérent 3", 110),
+        new("n_adherent4", "N° Adhérent 4", 110),
+        new("rue", "Rue", 160),
+        new("localisation_1", "Localisation 1", 140),
+        new("localisation_2", "Localisation 2", 140),
+        new("cp", "Code Postal", 90),
+        new("ville", "Ville", 140),
+        new("pays", "Pays", 120),
+        new("telephone", "Telephone", 110),
+        new("portable", "Portable", 110),
+        new("email", "Email", 180),
+        new("email2", "Email 2", 180),
+        new("assistante_commercial", "Assistante Commerciale", 180),
+        new("magasin_principal", "Magasin Principal", 160),
+        new("statuts_clients", "Statuts Clients", 140),
+        new("representant", "Représentant", 160),
+        new("responsable_achat", "Responsable Achat", 160),
+        new("op_en_cours", "Opération en Cours", 160),
+        new("status_vente", "Status Vente", 140),
+        new("date_saisie", "Date Saisie", 100),
+        new("heure_saisie", "Heure Saisie", 90),
+        new("date_rappel", "Date Rappel", 100),
+        new("heure_rappel", "Heure Rappel", 90),
+        new("note_perm", "Note Permanente", 200),
+        new("etat_client", "État Client", 140),
+        new("validation_status", "Validation", 110),
+    };
+
+    private int TotalWidth => Columns.Sum(c => c.Width);
+
+    private List<FranceOptique> LoadedItems = new();
+
+    private int TotalCount;
+    private int UnfilteredTotal;
+
+    private const int MaxLoadedRows = 5000;
+
+    private const int PageSize = 200;
+
+    private bool _hasMore;
+    private bool _loadingMore;
+
+    private long? Selected;
+    private string SearchColumn = "raison_sociale";
+    private string SearchTerm = string.Empty;
+    private bool Loading = true;
+    private bool Submitting;
+    private string? Error;
+    private bool ExportingOrImporting;
+    private bool ImportResultOpen;
+    private ImportResult? ImportSummary;
+    private bool IsAdmin;
+    private readonly SortState Sort = new();
+    private readonly GridFilterState Filter = new();
+
+    private bool Searching;
+
+    private bool HasActiveFilter => !string.IsNullOrWhiteSpace(SearchTerm) || Filter.HasAny;
+
+    private List<ClientGridFilter> ActiveFilters()
+    {
+        var filters = Filter.ActiveFilters
+            .Select(kv => new ClientGridFilter(kv.Key, kv.Value))
+            .ToList();
+
+        if (!string.IsNullOrWhiteSpace(SearchTerm))
+        {
+            filters.Add(new ClientGridFilter(SearchColumn, SearchTerm));
+        }
+
+        return filters;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        IsAdmin = await CurrentUserSvc.IsAdminAsync();
+        await Load();
+    }
+
+    private ElementReference HeaderRowRef;
+    private ElementReference TableWrapRef;
+    private DotNetObjectReference<Clients>? ResizeDotNetRef;
+    private DotNetObjectReference<Clients>? ScrollDotNetRef;
+    private bool ResizeAttached;
+    private bool ScrollAttached;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!ResizeAttached && !Loading)
+        {
+            ResizeAttached = true;
+            ResizeDotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("mafaliColumnResize.attach", HeaderRowRef, ResizeDotNetRef);
+        }
+
+        if (!ScrollAttached && !Loading)
+        {
+            ScrollAttached = true;
+            ScrollDotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("mafaliScroll.attach", TableWrapRef, ScrollDotNetRef);
+        }
+    }
+
+    [JSInvokable]
+    public void OnColumnResized(string key, int width)
+    {
+        var col = Columns.FirstOrDefault(c => c.Key == key);
+        if (col is null) return;
+        col.Width = width;
+        StateHasChanged();
+    }
+
+    public class ColumnAutoFitData
+    {
+        public string Header { get; set; } = "";
+        public List<string> Values { get; set; } = new();
+    }
+
+    [JSInvokable]
+    public ColumnAutoFitData GetColumnAutoFitData(string key)
+    {
+        var col = Columns.FirstOrDefault(c => c.Key == key);
+        return new ColumnAutoFitData
+        {
+            Header = col?.Label ?? "",
+            Values = LoadedItems.Select(item => GetCellText(item, key)).ToList(),
+        };
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (ResizeAttached)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("mafaliColumnResize.detach", HeaderRowRef);
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+
+        if (ScrollAttached)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("mafaliScroll.detach", TableWrapRef);
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+
+        ResizeDotNetRef?.Dispose();
+        ScrollDotNetRef?.Dispose();
+
+        _searchDebounceCts?.Cancel();
+        _searchDebounceCts?.Dispose();
+    }
+
+    private async Task Load()
+    {
+        ResizeAttached = false;
+        ScrollAttached = false;
+        Loading = true;
+        Selected = null;
+        try
+        {
+            await FetchFirstPage();
+
+            UnfilteredTotal = await ClientSvc.CountAsync();
+            Error = null;
+        }
+        catch (Exception ex)
+        {
+            Error = FriendlyError.ToUserMessage(ex);
+        }
+        finally
+        {
+            Loading = false;
+        }
+    }
+
+    private async Task RefreshResults()
+    {
+        Selected = null;
+        try
+        {
+            await FetchFirstPage();
+            Error = null;
+        }
+        catch (NotSupportedException ex)
+        {
+            Error = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Error = FriendlyError.ToUserMessage(ex);
+        }
+
+        if (ScrollAttached)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("mafaliScroll.toTop", TableWrapRef);
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+    }
+
+    private async Task FetchFirstPage()
+    {
+        var page = await GridSvc.GetPageAsync(
+            ActiveFilters(), Sort.Column, Sort.Descending, skip: 0, take: PageSize);
+        LoadedItems = page.Rows;
+        TotalCount = page.Total;
+        _hasMore = LoadedItems.Count < TotalCount && LoadedItems.Count < MaxLoadedRows;
+    }
+
+    private async Task ToggleSort(string column)
+    {
+        Sort.Toggle(column);
+        await RefreshResults();
+    }
+
+    private async Task OnSearchColumnChange(ChangeEventArgs e)
+    {
+        SearchColumn = e.Value?.ToString() ?? "raison_sociale";
+        if (!string.IsNullOrWhiteSpace(SearchTerm))
+        {
+            await RefreshResults();
+        }
+    }
+
+    private CancellationTokenSource? _searchDebounceCts;
+    private const int SearchDebounceMs = 300;
+
+    private async Task OnSearchInput(ChangeEventArgs e)
+    {
+        SearchTerm = e.Value?.ToString() ?? string.Empty;
+        Selected = null;
+
+        _searchDebounceCts?.Cancel();
+        _searchDebounceCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _searchDebounceCts = cts;
+
+        Searching = true;
+
+        try
+        {
+            await Task.Delay(SearchDebounceMs, cts.Token);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+
+        try
+        {
+            await RefreshResults();
+        }
+        finally
+        {
+            if (ReferenceEquals(_searchDebounceCts, cts))
+            {
+                Searching = false;
+            }
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnScrolledNearBottom()
+    {
+        if (_loadingMore || !_hasMore || LoadedItems.Count >= MaxLoadedRows) return;
+
+        _loadingMore = true;
+        StateHasChanged();
+        try
+        {
+            var take = Math.Min(PageSize, MaxLoadedRows - LoadedItems.Count);
+            var page = await GridSvc.GetPageAsync(
+                ActiveFilters(), Sort.Column, Sort.Descending, LoadedItems.Count, take);
+
+            LoadedItems.AddRange(page.Rows);
+            TotalCount = page.Total;
+            _hasMore = page.Rows.Count == take
+                       && LoadedItems.Count < TotalCount
+                       && LoadedItems.Count < MaxLoadedRows;
+            Error = null;
+        }
+        catch (Exception ex)
+        {
+            Error = FriendlyError.ToUserMessage(ex);
+        }
+        finally
+        {
+            _loadingMore = false;
+            StateHasChanged();
+        }
+    }
+
+    private void Select(long cleOpl) => Selected = cleOpl;
+
+    private void OpenCreate() => Nav.NavigateTo("/clients/new", forceLoad: true);
+
+    private void OpenEdit()
+    {
+        if (Selected is null) return;
+        Nav.NavigateTo($"/clients/{Selected}/edit", forceLoad: true);
+    }
+
+    private void OpenParcours(long? cleOpl)
+    {
+        if (cleOpl is null) return;
+        Nav.NavigateTo($"/parcours-client?mode=clients&start={cleOpl}", forceLoad: true);
+    }
+
+    private bool ConfirmDeleteOpen;
+
+    private void OpenDeleteConfirm()
+    {
+        if (Selected is null) return;
+        ConfirmDeleteOpen = true;
+    }
+
+    private void CancelDelete() => ConfirmDeleteOpen = false;
+
+    private async Task ConfirmDelete()
+    {
+        if (Selected is null) return;
+        ConfirmDeleteOpen = false;
+        Submitting = true;
+        Error = null;
+        try
+        {
+            await ClientSvc.DeleteAsync(Selected.Value);
+            await Load();
+        }
+        catch (Exception ex)
+        {
+            Error = FriendlyError.ToUserMessage(ex);
+        }
+        finally
+        {
+            Submitting = false;
+        }
+    }
+
+    private const int LargeExportThreshold = 25_000;
+
+    private const int ExportRowsPerSecond = 4_700;
+
+    private bool ConfirmExportOpen;
+    private int ConfirmExportSeconds => Math.Max(1, TotalCount / ExportRowsPerSecond);
+
+    private async Task Export()
+    {
+        if (TotalCount >= LargeExportThreshold)
+        {
+            ConfirmExportOpen = true;
+            return;
+        }
+
+        await RunExport();
+    }
+
+    private void CancelExport() => ConfirmExportOpen = false;
+
+    private async Task ConfirmExport()
+    {
+        ConfirmExportOpen = false;
+        await RunExport();
+    }
+
+    private async Task RunExport()
+    {
+        ExportingOrImporting = true;
+        Error = null;
+        StateHasChanged();
+        await Task.Yield();
+        try
+        {
+            var toExport = await GridSvc.GetAllMatchingAsync(
+                ActiveFilters(), Sort.Column, Sort.Descending);
+            var bytes = await Task.Run(() => ImportExportSvc.Export(toExport));
+            using var stream = new MemoryStream(bytes);
+            using var streamRef = new DotNetStreamReference(stream);
+            var fileName = $"clients_{Clock.Today:yyyy-MM-dd}.xlsx";
+            await JS.InvokeVoidAsync("mafaliFileDownload.downloadFileFromStream", fileName,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", streamRef);
+        }
+        catch (Exception ex)
+        {
+            Error = FriendlyError.ToUserMessage(ex);
+        }
+        finally
+        {
+            ExportingOrImporting = false;
+        }
+    }
+
+    private const long MaxImportFileSize = 20 * 1024 * 1024;
+
+    private async Task HandleImportFile(InputFileChangeEventArgs e)
+    {
+        if (!IsAdmin)
+        {
+            Error = "Seuls les administrateurs peuvent importer des clients.";
+            return;
+        }
+
+        ExportingOrImporting = true;
+        Error = null;
+        try
+        {
+            using var buffered = new MemoryStream();
+            await e.File.OpenReadStream(MaxImportFileSize).CopyToAsync(buffered);
+            buffered.Position = 0;
+            ImportSummary = await ImportExportSvc.ImportAsync(buffered);
+            ImportResultOpen = true;
+            await Load();
+        }
+        catch (Exception ex)
+        {
+            Error = FriendlyError.ToUserMessage(ex);
+        }
+        finally
+        {
+            ExportingOrImporting = false;
+        }
+    }
+
+    private static string GetCellText(FranceOptique c, string key) => key switch
+    {
+        "cle_opl" => c.CleOpl.ToString(),
+        "famille" => c.Famille ?? "",
+        "raison_sociale" => c.RaisonSociale ?? "",
+        "complement" => c.Complement ?? "",
+        "franchise" => c.Franchise ?? "",
+        "franchise2" => c.Franchise2 ?? "",
+        "franchise3" => c.Franchise3 ?? "",
+        "franchise4" => c.Franchise4 ?? "",
+        "n_adherent" => c.NAdherent ?? "",
+        "n_adherent2" => c.NAdherent2 ?? "",
+        "n_adherent3" => c.NAdherent3 ?? "",
+        "n_adherent4" => c.NAdherent4 ?? "",
+        "rue" => c.Rue ?? "",
+        "localisation_1" => c.Localisation1 ?? "",
+        "localisation_2" => c.Localisation2 ?? "",
+        "cp" => c.Cp ?? "",
+        "ville" => c.Ville ?? "",
+        "pays" => c.Pays ?? "",
+        "telephone" => c.Telephone ?? "",
+        "portable" => c.Portable ?? "",
+        "email" => c.Email ?? "",
+        "email2" => c.Email2 ?? "",
+        "assistante_commercial" => c.AssistanteCommercial ?? "",
+        "magasin_principal" => c.MagasinPrincipal ?? "",
+        "statuts_clients" => c.StatutsClients ?? "",
+        "representant" => c.Representant ?? "",
+        "responsable_achat" => c.ResponsableAchat ?? "",
+        "op_en_cours" => c.OpEnCours ?? "",
+        "status_vente" => c.StatusVente ?? "",
+        "date_saisie" => c.DateSaisie?.ToString("dd/MM/yyyy") ?? "",
+        "heure_saisie" => c.HeureSaisie?.ToString("HH:mm") ?? "",
+        "date_rappel" => c.DateRappel?.ToString("dd/MM/yyyy") ?? "",
+        "heure_rappel" => c.HeureRappel?.ToString("HH:mm") ?? "",
+        "note_perm" => c.NotePerm ?? "",
+        "etat_client" => c.EtatClient == "1" ? "Client" : "Prospect",
+        "validation_status" => c.ValidationStatus == "pending" ? "Non validé" : "",
+        _ => "",
+    };
+
+    private static string StatutBadgeClass(string? statut) => statut switch
+    {
+        "Payés" => "badge-success",
+        "Impayés" => "badge-warning",
+        "Bloqués" => "badge-danger",
+        _ => "",
+    };
+}

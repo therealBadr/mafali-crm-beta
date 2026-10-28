@@ -1,0 +1,600 @@
+﻿@page "/mon-compte"
+@attribute [Authorize(Roles = "admin")]
+@inject UserService UserSvc
+@inject CurrentUserService CurrentUser
+@inject ClientService ClientSvc
+@inject RappelService RappelSvc
+@inject UserClock Clock
+@inject NavigationManager Nav
+
+<PageTitle>Mon Compte</PageTitle>
+
+<div class="page">
+<div class="toolbar">
+    <span class="title">Mon Compte</span>
+</div>
+
+@if (IsAdmin)
+{
+    <div class="mc-tabs">
+        <button class="mc-tab @(ActiveTab == "apercu" ? "active" : "")" @onclick='() => ActiveTab = "apercu"'>Aperçu</button>
+        <button class="mc-tab @(ActiveTab == "profil" ? "active" : "")" @onclick='() => ActiveTab = "profil"'>Mon Profil</button>
+        <button class="mc-tab @(ActiveTab == "users" ? "active" : "")" @onclick='() => ActiveTab = "users"'>Utilisateurs</button>
+        <button type="button" class="mc-tab-link" @onclick="OpenCreateAccount">+ Nouveau compte</button>
+    </div>
+}
+
+@if (!IsAdmin || ActiveTab == "profil")
+{
+    <div class="mc-card">
+        <div class="mc-profile-header">
+            <div class="mc-avatar">@Initial</div>
+            <div>
+                <div class="mc-name">@Login</div>
+                @if (Role is not null)
+                {
+                    <span class="badge @RoleBadgeClass(Role)">@RoleLabel(Role)</span>
+                }
+            </div>
+        </div>
+
+        <div class="mc-divider"></div>
+
+        <p class="mc-section-title">Changer le mot de passe</p>
+
+        <div class="mc-field">
+            <label for="mc-current">Mot de passe actuel</label>
+            <input id="mc-current" class="text-input" type="password" value="@CurrentPassword"
+                   @oninput="e => CurrentPassword = e.Value?.ToString() ?? string.Empty" />
+        </div>
+
+        <div class="mc-field">
+            <label for="mc-new">Nouveau mot de passe</label>
+            <input id="mc-new" class="text-input" type="password" value="@NewPassword"
+                   @oninput="e => NewPassword = e.Value?.ToString() ?? string.Empty" />
+        </div>
+
+        <div class="mc-field">
+            <label for="mc-confirm">Confirmer le nouveau mot de passe</label>
+            <input id="mc-confirm" class="text-input" type="password" value="@ConfirmPassword"
+                   @oninput="e => ConfirmPassword = e.Value?.ToString() ?? string.Empty" />
+        </div>
+
+        @if (Error is not null)
+        {
+            <div class="alert">@Error</div>
+        }
+        @if (Success)
+        {
+            <div class="badge badge-success" style="display: block; margin-bottom: 10px;">Mot de passe modifié.</div>
+        }
+
+        <button class="btn btn-primary" disabled="@Submitting" @onclick="Submit">Modifier le mot de passe</button>
+    </div>
+}
+
+@if (IsAdmin && ActiveTab == "apercu")
+{
+    <div class="mc-stats-grid">
+        <div class="mc-stat-card">
+            <span class="mc-stat-value">@ClientCount</span>
+            <span class="mc-stat-label">Clients</span>
+        </div>
+        <div class="mc-stat-card">
+            <span class="mc-stat-value">@UserItems.Count(u => u.IsActive)<span class="mc-stat-of">/@UserItems.Count</span></span>
+            <span class="mc-stat-label">Utilisateurs actifs</span>
+        </div>
+        <div class="mc-stat-card @(DueRappelCount > 0 ? "mc-stat-card-alert" : "")">
+            <span class="mc-stat-value">@DueRappelCount</span>
+            <span class="mc-stat-label">Rappels en attente</span>
+        </div>
+    </div>
+
+    <div class="mc-card mc-recent-card">
+        <p class="mc-section-title">Connexions récentes</p>
+        @if (RecentLogins.Count == 0)
+        {
+            <p class="dimmed">Aucune connexion enregistrée.</p>
+        }
+        else
+        {
+            <ul class="mc-recent-list">
+                @foreach (var lh in RecentLogins)
+                {
+                    <li>
+                        <span class="mc-recent-login">@lh.Login</span>
+                        <span class="mc-recent-time">@lh.LoggedInAt.ToString("dd/MM/yyyy HH:mm")</span>
+                    </li>
+                }
+            </ul>
+        }
+    </div>
+}
+
+@if (IsAdmin && ActiveTab == "users")
+{
+    <div class="toolbar" style="padding-left: 0; padding-right: 0;">
+        <span class="title">Utilisateurs</span>
+        <div class="actions">
+            <button class="btn btn-primary" @onclick="OpenCreate">Nouveau</button>
+            <button class="btn btn-outline" disabled="@(SelectedUser is null)" @onclick="OpenEdit">Modifier</button>
+        </div>
+    </div>
+
+    @if (DriftAssistantesWithoutLogin.Count > 0 || DriftLoginsWithoutProfile.Count > 0)
+    {
+        <div class="alert">
+            @if (DriftAssistantesWithoutLogin.Count > 0)
+            {
+                <div>Assistantes sans compte utilisateur : @string.Join(", ", DriftAssistantesWithoutLogin)</div>
+            }
+            @if (DriftLoginsWithoutProfile.Count > 0)
+            {
+                <div>Comptes sans profil assistante : @string.Join(", ", DriftLoginsWithoutProfile)</div>
+            }
+        </div>
+    }
+
+    @if (UsersError is not null)
+    {
+        <div class="alert">@UsersError</div>
+    }
+
+    @if (UsersLoading)
+    {
+        <p class="dimmed">Chargement…</p>
+    }
+    else
+    {
+        <div class="grid-group">
+        <GridFilterClearAll Filter="UserFilter" OnFilterChanged="StateHasChanged" />
+        <div class="table-wrap">
+            <div class="header-row">
+                <div class="cell @UserSort.CssClass("login")" @onclick='() => UserSort.Toggle("login")'>
+                    Login @UserSort.ArrowFor("login")
+                    <ColumnFilterIcon Column="login" Label="Login" Filter="UserFilter" OnFilterChanged="StateHasChanged" />
+                </div>
+                <div class="cell @UserSort.CssClass("role")" style="flex: 0 0 140px;" @onclick='() => UserSort.Toggle("role")'>
+                    Rôle @UserSort.ArrowFor("role")
+                    <ColumnFilterIcon Column="role" Label="Rôle" Filter="UserFilter" OnFilterChanged="StateHasChanged" />
+                </div>
+                <div class="cell @UserSort.CssClass("statut")" style="flex: 0 0 120px;" @onclick='() => UserSort.Toggle("statut")'>
+                    Statut @UserSort.ArrowFor("statut")
+                    <ColumnFilterIcon Column="statut" Label="Statut" Filter="UserFilter" OnFilterChanged="StateHasChanged" />
+                </div>
+                <div class="cell @UserSort.CssClass("mdp")" style="flex: 0 0 140px;" @onclick='() => UserSort.Toggle("mdp")'>
+                    Mot de passe @UserSort.ArrowFor("mdp")
+                    <ColumnFilterIcon Column="mdp" Label="Mot de passe" Filter="UserFilter" OnFilterChanged="StateHasChanged" />
+                </div>
+                <div class="cell @UserSort.CssClass("derniere")" style="flex: 0 0 160px;" @onclick='() => UserSort.Toggle("derniere")'>
+                    Dernière connexion @UserSort.ArrowFor("derniere")
+                    <ColumnFilterIcon Column="derniere" Label="Dernière connexion" Filter="UserFilter" OnFilterChanged="StateHasChanged" />
+                </div>
+            </div>
+            @foreach (var u in SortedUsers)
+            {
+                <div class="row @(u.Login == SelectedUser ? "selected" : "")" @onclick="() => SelectedUser = u.Login">
+                    <div class="cell">@u.Login</div>
+                    <div class="cell" style="flex: 0 0 140px;">
+                        <span class="badge @RoleBadgeClass(u.Role)">@RoleLabel(u.Role)</span>
+                    </div>
+                    <div class="cell" style="flex: 0 0 120px;">
+                        <span class="badge @(u.IsActive ? "badge-success" : "badge-danger")">@(u.IsActive ? "Actif" : "Inactif")</span>
+                    </div>
+                    <div class="cell" style="flex: 0 0 140px;">
+                        <span class="badge @(string.IsNullOrEmpty(u.PasswordHash) ? "badge-warning" : "badge-gray")">
+                            @(string.IsNullOrEmpty(u.PasswordHash) ? "Non défini" : "Défini")
+                        </span>
+                    </div>
+                    <div class="cell" style="flex: 0 0 160px;">@(u.LastLoginAt?.ToString("dd/MM/yyyy HH:mm") ?? "—")</div>
+                </div>
+            }
+        </div>
+        </div>
+        <p class="count">@UserItems.Count enregistrements</p>
+    }
+}
+</div>
+
+@if (ModalOpen)
+{
+    <div class="modal-backdrop" @onclick="() => ModalOpen = false">
+        <div class="modal" @onclick:stopPropagation="true">
+            <h3>@(IsEditMode ? "Modifier" : "Nouveau")</h3>
+
+            <label for="u-login">Login</label>
+            <input id="u-login" class="text-input" maxlength="100" value="@FormLogin"
+                   disabled="@IsEditMode"
+                   @oninput="e => FormLogin = e.Value?.ToString() ?? string.Empty" />
+
+            <label for="u-role">Rôle</label>
+            <select id="u-role" class="text-input" value="@FormRole" @onchange="OnRoleChange">
+                <option value="admin">Admin</option>
+                <option value="assistant">Assistant</option>
+                <option value="commercial">Commercial</option>
+            </select>
+
+            @if (IsEditMode)
+            {
+                <label class="checkbox-label">
+                    <input type="checkbox" @bind="FormIsActive" />
+                    Compte actif
+                </label>
+
+                <p class="dimmed" style="margin-top: 14px;">
+                    Mot de passe : @(FormHasPassword ? "défini" : "non défini — sera défini à la prochaine connexion")
+                </p>
+                <button class="btn btn-outline" type="button" disabled="@UsersSubmitting" @onclick="ResetPassword">
+                    Réinitialiser le mot de passe
+                </button>
+            }
+            else
+            {
+                <p class="dimmed" style="margin-top: 14px;">
+                    Aucun mot de passe à saisir ici — le nouvel utilisateur le définit lui-même à sa première connexion.
+                </p>
+            }
+
+            @if (ModalError is not null)
+            {
+                <div class="alert">@ModalError</div>
+            }
+            @if (ModalInfo is not null)
+            {
+                <div class="badge badge-success" style="display: block; margin-top: 10px;">@ModalInfo</div>
+            }
+
+            <div class="modal-actions">
+                <button class="btn btn-default" @onclick="() => ModalOpen = false">Fermer</button>
+                <button class="btn btn-primary" disabled="@UsersSubmitting" @onclick="SubmitModal">Enregistrer</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (AccountModalOpen)
+{
+    <div class="modal-backdrop" @onclick="CloseCreateAccount">
+        <div class="modal" @onclick:stopPropagation="true">
+            <h3>Nouveau compte</h3>
+
+            <label for="na-login">Login</label>
+            <input id="na-login" class="text-input" maxlength="100" value="@AccountLogin"
+                   @oninput="e => AccountLogin = e.Value?.ToString() ?? string.Empty" />
+
+            <label for="na-role">Rôle</label>
+            <select id="na-role" class="text-input" value="@AccountRole" @onchange="OnAccountRoleChange">
+                <option value="admin">Admin</option>
+                <option value="assistant">Assistant</option>
+                <option value="commercial">Commercial</option>
+            </select>
+
+            <label for="na-password">Mot de passe</label>
+            <input id="na-password" class="text-input" type="password" value="@AccountPassword"
+                   @oninput="e => AccountPassword = e.Value?.ToString() ?? string.Empty" />
+
+            <label for="na-confirm">Confirmer le mot de passe</label>
+            <input id="na-confirm" class="text-input" type="password" value="@AccountConfirm"
+                   @oninput="e => AccountConfirm = e.Value?.ToString() ?? string.Empty" />
+
+            @if (AccountError is not null)
+            {
+                <div class="alert">@AccountError</div>
+            }
+
+            <div class="modal-actions">
+                <button class="btn btn-default" @onclick="CloseCreateAccount">Annuler</button>
+                <button class="btn btn-primary" disabled="@AccountSubmitting" @onclick="SubmitCreateAccount">Créer le compte</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private string? Login;
+    private string? Role;
+    private string CurrentPassword = string.Empty;
+    private string NewPassword = string.Empty;
+    private string ConfirmPassword = string.Empty;
+    private string? Error;
+    private bool Success;
+    private bool Submitting;
+
+    private bool IsAdmin;
+
+    private string ActiveTab = "apercu";
+
+    [SupplyParameterFromQuery(Name = "tab")]
+    [Parameter]
+    public string? Tab { get; set; }
+
+    private int ClientCount;
+    private int DueRappelCount;
+    private List<LoginHistory> RecentLogins = new();
+
+    private string Initial => string.IsNullOrEmpty(Login) ? "?" : Login[..1].ToUpperInvariant();
+
+    protected override async Task OnInitializedAsync()
+    {
+        Login = await CurrentUser.GetLoginAsync();
+        Role = await CurrentUser.GetRoleAsync();
+        IsAdmin = await CurrentUser.IsAdminAsync();
+
+        if (Role == "commercial")
+        {
+            Nav.NavigateTo("/", replace: true);
+            return;
+        }
+
+        if (IsAdmin && Tab is "profil" or "apercu" or "users")
+        {
+            ActiveTab = Tab;
+        }
+        if (IsAdmin)
+        {
+            await LoadUsers();
+            ClientCount = await ClientSvc.CountAsync();
+            DueRappelCount = await RappelSvc.CountDueAsync(Clock.Today);
+            RecentLogins = await UserSvc.GetLoginHistoryAsync(limit: 5);
+        }
+    }
+
+    private async Task Submit()
+    {
+        Error = null;
+        Success = false;
+
+        if (NewPassword.Length == 0)
+        {
+            Error = "Le nouveau mot de passe ne peut pas être vide.";
+            return;
+        }
+        if (NewPassword != ConfirmPassword)
+        {
+            Error = "La confirmation ne correspond pas au nouveau mot de passe.";
+            return;
+        }
+        if (Login is null) return;
+
+        Submitting = true;
+        try
+        {
+            var result = await UserSvc.ChangeOwnPasswordAsync(Login, CurrentPassword, NewPassword);
+            if (result == ChangePasswordResult.WrongCurrentPassword)
+            {
+                Error = "Mot de passe actuel incorrect.";
+                return;
+            }
+            Success = true;
+            CurrentPassword = string.Empty;
+            NewPassword = string.Empty;
+            ConfirmPassword = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            Error = FriendlyError.ToUserMessage(ex);
+        }
+        finally
+        {
+            Submitting = false;
+        }
+    }
+
+    private List<User> UserItems = new();
+    private string? SelectedUser;
+    private bool UsersLoading = true;
+    private string? UsersError;
+    private bool UsersSubmitting;
+    private readonly SortState UserSort = new();
+    private readonly GridFilterState UserFilter = new();
+
+    private List<User> SortedUsers => GridSort.Apply(GridFilter.Apply(UserItems, UserFilter, GetUserSortText), UserSort, GetUserSortText);
+
+    private static string GetUserSortText(User u, string column) => column switch
+    {
+        "login" => u.Login ?? "",
+        "role" => RoleLabel(u.Role),
+        "statut" => u.IsActive ? "Actif" : "Inactif",
+        "mdp" => string.IsNullOrEmpty(u.PasswordHash) ? "Non défini" : "Défini",
+        "derniere" => u.LastLoginAt?.ToString("dd/MM/yyyy HH:mm") ?? "",
+        _ => "",
+    };
+
+    private List<string> DriftAssistantesWithoutLogin = new();
+    private List<string> DriftLoginsWithoutProfile = new();
+
+    private bool ModalOpen;
+    private bool IsEditMode;
+    private string FormLogin = string.Empty;
+    private string FormRole = "commercial";
+    private bool FormIsActive = true;
+    private bool FormHasPassword;
+    private string? ModalError;
+    private string? ModalInfo;
+
+    private static string RoleLabel(string role) => role switch
+    {
+        "admin" => "Admin",
+        "assistant" => "Assistant",
+        _ => "Commercial",
+    };
+
+    private static string RoleBadgeClass(string role) => role switch
+    {
+        "admin" => "badge-teal",
+        "assistant" => "badge-success",
+        _ => "badge-gray",
+    };
+
+    private void OnRoleChange(ChangeEventArgs e) => FormRole = e.Value?.ToString() ?? "commercial";
+
+    private async Task LoadUsers()
+    {
+        UsersLoading = true;
+        SelectedUser = null;
+        try
+        {
+            UserItems = await UserSvc.ListAsync();
+            var (withoutLogin, withoutProfile) = await UserSvc.GetIdentityDriftAsync();
+            DriftAssistantesWithoutLogin = withoutLogin;
+            DriftLoginsWithoutProfile = withoutProfile;
+            UsersError = null;
+        }
+        catch (Exception ex)
+        {
+            UsersError = FriendlyError.ToUserMessage(ex);
+        }
+        finally
+        {
+            UsersLoading = false;
+        }
+    }
+
+    private void OpenCreate()
+    {
+        IsEditMode = false;
+        FormLogin = string.Empty;
+        FormRole = "commercial";
+        FormIsActive = true;
+        FormHasPassword = false;
+        ModalError = null;
+        ModalInfo = null;
+        ModalOpen = true;
+    }
+
+    private void OpenEdit()
+    {
+        var current = UserItems.FirstOrDefault(u => u.Login == SelectedUser);
+        if (current is null) return;
+        IsEditMode = true;
+        FormLogin = current.Login;
+        FormRole = current.Role;
+        FormIsActive = current.IsActive;
+        FormHasPassword = !string.IsNullOrEmpty(current.PasswordHash);
+        ModalError = null;
+        ModalInfo = null;
+        ModalOpen = true;
+    }
+
+    private async Task SubmitModal()
+    {
+        var trimmed = FormLogin.Trim();
+        if (trimmed.Length == 0)
+        {
+            ModalError = "Ce champ est requis.";
+            return;
+        }
+
+        UsersSubmitting = true;
+        ModalError = null;
+        try
+        {
+            if (IsEditMode)
+            {
+                await UserSvc.UpdateRoleAsync(trimmed, FormRole);
+                await UserSvc.SetActiveAsync(trimmed, FormIsActive);
+            }
+            else
+            {
+                await UserSvc.CreateAsync(trimmed, FormRole);
+            }
+            ModalOpen = false;
+            await LoadUsers();
+        }
+        catch (Exception ex)
+        {
+            ModalError = FriendlyError.ToUserMessage(ex);
+        }
+        finally
+        {
+            UsersSubmitting = false;
+        }
+    }
+
+    private async Task ResetPassword()
+    {
+        UsersSubmitting = true;
+        ModalError = null;
+        ModalInfo = null;
+        try
+        {
+            await UserSvc.ForcePasswordResetAsync(FormLogin);
+            FormHasPassword = false;
+            ModalInfo = "Mot de passe réinitialisé — sera défini à la prochaine connexion.";
+            await LoadUsers();
+        }
+        catch (Exception ex)
+        {
+            ModalError = FriendlyError.ToUserMessage(ex);
+        }
+        finally
+        {
+            UsersSubmitting = false;
+        }
+    }
+
+    private bool AccountModalOpen;
+    private string AccountLogin = string.Empty;
+    private string AccountRole = "commercial";
+    private string AccountPassword = string.Empty;
+    private string AccountConfirm = string.Empty;
+    private string? AccountError;
+    private bool AccountSubmitting;
+
+    private void OnAccountRoleChange(ChangeEventArgs e) => AccountRole = e.Value?.ToString() ?? "commercial";
+
+    private void OpenCreateAccount()
+    {
+        AccountLogin = string.Empty;
+        AccountRole = "commercial";
+        AccountPassword = string.Empty;
+        AccountConfirm = string.Empty;
+        AccountError = null;
+        AccountModalOpen = true;
+    }
+
+    private void CloseCreateAccount()
+    {
+        AccountModalOpen = false;
+        AccountPassword = string.Empty;
+        AccountConfirm = string.Empty;
+    }
+
+    private async Task SubmitCreateAccount()
+    {
+        var trimmed = AccountLogin.Trim();
+        if (trimmed.Length == 0)
+        {
+            AccountError = "Ce champ est requis.";
+            return;
+        }
+        if (AccountPassword.Length == 0)
+        {
+            AccountError = "Le mot de passe ne peut pas être vide.";
+            return;
+        }
+        if (AccountPassword != AccountConfirm)
+        {
+            AccountError = "La confirmation ne correspond pas au mot de passe.";
+            return;
+        }
+
+        AccountSubmitting = true;
+        AccountError = null;
+        try
+        {
+            await UserSvc.CreateWithPasswordAsync(trimmed, AccountRole, AccountPassword);
+            CloseCreateAccount();
+            ActiveTab = "users";
+            await LoadUsers();
+        }
+        catch (Exception ex)
+        {
+            AccountError = FriendlyError.ToUserMessage(ex);
+        }
+        finally
+        {
+            AccountSubmitting = false;
+        }
+    }
+}

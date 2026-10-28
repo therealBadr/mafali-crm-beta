@@ -1,0 +1,1 @@
+ALTER TABLE pays DROP COLUMN IF EXISTS fuseau_horaire;

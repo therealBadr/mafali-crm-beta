@@ -1,0 +1,138 @@
+@using System.Globalization
+@inject UserClock Clock
+
+<div class="time-input-wrap" style="@Style">
+    <input @ref="_inputRef" id="@Id" class="text-input" value="@_text" disabled="@Disabled" placeholder="hh:mm"
+           maxlength="5" @oninput="OnTextInput" @onblur="OnBlur" @onkeydown="OnKeyDown" autocomplete="off" />
+    <button type="button" class="time-input-toggle" tabindex="-1" disabled="@Disabled"
+            @onmousedown="TogglePicker" @onmousedown:preventDefault="true">🕐</button>
+
+    @if (ShowPicker)
+    {
+        <div class="time-input-picker">
+            <div class="time-input-preview">@(_committedValue?.ToString("HH:mm") ?? "--:--")</div>
+
+            <div class="time-input-section">Heure</div>
+            <div class="time-input-grid">
+                @for (var h = 0; h < 24; h++)
+                {
+                    var hour = h;
+                    <button type="button"
+                            class="time-input-opt
+                                   @(_committedValue?.Hour == hour ? "time-input-opt-selected" : "")
+                                   @(Clock.TimeNow.Hour == hour ? "time-input-opt-now" : "")"
+                            @onmousedown="() => SelectHour(hour)" @onmousedown:preventDefault="true">
+                        @hour.ToString("00")
+                    </button>
+                }
+            </div>
+
+            <div class="time-input-section">Minutes</div>
+            <div class="time-input-grid">
+                @foreach (var m in MinuteOptions)
+                {
+                    var minute = m;
+                    <button type="button"
+                            class="time-input-opt @(_committedValue?.Minute == minute ? "time-input-opt-selected" : "")"
+                            @onmousedown="() => SelectMinute(minute)" @onmousedown:preventDefault="true">
+                        @minute.ToString("00")
+                    </button>
+                }
+            </div>
+
+            <div class="time-input-actions">
+                <button type="button" class="time-input-action"
+                        @onmousedown="SelectNow" @onmousedown:preventDefault="true">Maintenant</button>
+                <button type="button" class="time-input-action time-input-action-quiet"
+                        @onmousedown="ClearValue" @onmousedown:preventDefault="true">Effacer</button>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public TimeOnly? Value { get; set; }
+    [Parameter] public EventCallback<TimeOnly?> ValueChanged { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string? Id { get; set; }
+    [Parameter] public string? Style { get; set; }
+
+    private static readonly int[] MinuteOptions = { 0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55 };
+
+    private static string MaskDigitsToTime(string raw, out int digitCount)
+    {
+        var digits = new string(raw.Where(char.IsDigit).ToArray());
+        if (digits.Length > 4) digits = digits[..4];
+        digitCount = digits.Length;
+        return digits.Length <= 2 ? digits : $"{digits[..2]}:{digits[2..]}";
+    }
+
+    private static bool TryParseExactTime(string masked, out TimeOnly result) =>
+        TimeOnly.TryParseExact(masked, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
+
+    private string _text = "";
+    private bool _syncInitialized;
+    private TimeOnly? _committedValue;
+    private bool ShowPicker;
+    private ElementReference _inputRef;
+
+    protected override void OnParametersSet()
+    {
+        if (!_syncInitialized || Value != _committedValue)
+        {
+            _committedValue = Value;
+            _text = Value?.ToString("HH:mm") ?? "";
+            _syncInitialized = true;
+        }
+    }
+
+    private async Task OnTextInput(ChangeEventArgs e)
+    {
+        _text = MaskDigitsToTime(e.Value?.ToString() ?? "", out var digitCount);
+
+        if (digitCount == 4 && TryParseExactTime(_text, out var parsed))
+        {
+            _committedValue = parsed;
+            await ValueChanged.InvokeAsync(parsed);
+        }
+    }
+
+    private void OnBlur()
+    {
+        ShowPicker = false;
+        _text = _committedValue?.ToString("HH:mm") ?? "";
+    }
+
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") ShowPicker = false;
+    }
+
+    private async Task TogglePicker()
+    {
+        if (Disabled) return;
+        ShowPicker = !ShowPicker;
+        if (ShowPicker) await _inputRef.FocusAsync();
+    }
+
+    private Task SelectHour(int hour) => Commit(new TimeOnly(hour, _committedValue?.Minute ?? 0));
+
+    private Task SelectMinute(int minute) => Commit(new TimeOnly(_committedValue?.Hour ?? 0, minute));
+
+    private Task SelectNow() => Commit(new TimeOnly(Clock.TimeNow.Hour, Clock.TimeNow.Minute));
+
+    private async Task ClearValue()
+    {
+        _committedValue = null;
+        _text = "";
+        ShowPicker = false;
+        await ValueChanged.InvokeAsync(null);
+    }
+
+    private async Task Commit(TimeOnly value)
+    {
+        _committedValue = value;
+        _text = value.ToString("HH:mm");
+        await ValueChanged.InvokeAsync(value);
+    }
+}

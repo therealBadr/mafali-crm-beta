@@ -1,0 +1,54 @@
+@inject IJSRuntime JS
+@inject UserClock Clock
+@inject ILogger<BrowserClockProvider> Logger
+@inject CircuitContext Circuit
+@inject ConnectedUserRegistry Registry
+
+@if (Clock.IsBrowserTime || _attempted)
+{
+    @ChildContent
+}
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private bool _attempted;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        try
+        {
+            await Clock.InitializeAsync(JS);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Could not read the browser's timezone; falling back to the server's ({Zone})", Clock.TimeZoneId);
+        }
+
+        _attempted = true;
+
+        if (Circuit.CircuitId is { } circuitId)
+        {
+            Registry.SetTimeZone(circuitId, Clock.BrowserTimeZoneId);
+        }
+        else
+        {
+            Logger.LogWarning("No circuit id available; this circuit's timezone will not reach the rappel scanner");
+        }
+
+        if (Clock.IsBrowserTime)
+        {
+            Logger.LogInformation("Circuit clock set from browser: {Zone} (UTC{Offset:+0;-0} min)",
+                Clock.TimeZoneId, Clock.ReportedOffsetMinutes);
+        }
+        else
+        {
+            Logger.LogWarning("Browser reported timezone {Reported} which is not in TZDB {Tzdb}; using the server's ({Zone})",
+                Clock.ReportedTimeZoneId ?? "(none)", AppTimeZones.TzdbVersion, Clock.TimeZoneId);
+        }
+
+        StateHasChanged();
+    }
+}

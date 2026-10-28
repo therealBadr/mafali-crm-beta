@@ -1,0 +1,169 @@
+﻿@inherits LayoutComponentBase
+@using System.Security.Claims
+@inject NavigationManager Nav
+@implements IDisposable
+
+<div class="app-shell">
+    <header class="topbar">
+        <a href="/" class="brand">
+            <span class="brand-word">Mafali</span>
+            <span class="brand-suffix">CRM</span>
+        </a>
+        <nav class="nav-links">
+            <AuthorizeView Roles="admin,assistant">
+                <Authorized>
+                    <div class="nav-dropdown">
+                        <button type="button" class="nav-link nav-dropdown-toggle" @onclick="ToggleFichiers">
+                            Fichiers
+                            <span class="nav-caret">@(FichiersOpen ? "▴" : "▾")</span>
+                        </button>
+                        @if (FichiersOpen)
+                        {
+                            <div class="nav-dropdown-panel">
+                                @foreach (var item in FichierItems)
+                                {
+                                    <NavLink href="@item.Href" class="nav-dropdown-item" ActiveClass="nav-dropdown-item-active" target="_blank">
+                                        @item.Label
+                                    </NavLink>
+                                }
+                                <AuthorizeView Roles="admin">
+                                    <Authorized Context="adminContext">
+                                        <NavLink href="/historique-connexions" class="nav-dropdown-item" ActiveClass="nav-dropdown-item-active" target="_blank">
+                                            Historique des Connexions
+                                        </NavLink>
+                                    </Authorized>
+                                </AuthorizeView>
+                            </div>
+                        }
+                    </div>
+                </Authorized>
+            </AuthorizeView>
+            <AuthorizeView Roles="admin,assistant">
+                <Authorized>
+                    <NavLink href="/definir-filtre" class="nav-link" ActiveClass="nav-link-active" target="_blank">
+                        Définir un Filtre
+                    </NavLink>
+                    <NavLink href="/definir-filtre-historique" class="nav-link" ActiveClass="nav-link-active" target="_blank">
+                        Définir un Filtre Historique
+                    </NavLink>
+                </Authorized>
+            </AuthorizeView>
+            <NavLink href="/filtres-predefinis" class="nav-link" ActiveClass="nav-link-active" target="_blank">
+                Filtres Prédéfinis
+            </NavLink>
+            <NavLink href="/recherche-client" class="nav-link" ActiveClass="nav-link-active" target="_blank">
+                Rechercher un Client
+            </NavLink>
+            <NavLink href="/rappels" class="nav-link" ActiveClass="nav-link-active" target="_blank">
+                Rappels
+            </NavLink>
+            <NavLink href="/bon-commande" class="nav-link" ActiveClass="nav-link-active" target="_blank">
+                Bon de Commande
+            </NavLink>
+            <AuthorizeView Roles="commercial">
+                <Authorized>
+                    <NavLink href="/ajouter-client" class="nav-link" ActiveClass="nav-link-active" target="_blank">
+                        Ajouter un Client
+                    </NavLink>
+                    <NavLink href="/mes-clients-ajoutes" class="nav-link" ActiveClass="nav-link-active" target="_blank">
+                        Mes Clients Ajoutés
+                    </NavLink>
+                </Authorized>
+            </AuthorizeView>
+            <AuthorizeView Roles="admin,assistant">
+                <Authorized>
+                    <NavLink href="/clients/new" class="nav-link" ActiveClass="nav-link-active" target="_blank">
+                        Ajouter un Client
+                    </NavLink>
+                </Authorized>
+            </AuthorizeView>
+            <AuthorizeView Roles="admin,assistant">
+                <Authorized>
+                    <NavLink href="/clients-a-valider" class="nav-link" ActiveClass="nav-link-active" target="_blank">
+                        Clients à valider
+                    </NavLink>
+                </Authorized>
+            </AuthorizeView>
+        </nav>
+        <div class="nav-user">
+            <AuthorizeView>
+                <Authorized>
+                    <span class="nav-user-name">
+                        @context.User.Identity?.Name (@Capitalize(context.User.FindFirst(ClaimTypes.Role)?.Value))
+                    </span>
+                    <AuthorizeView Roles="admin">
+                        <Authorized Context="adminContext">
+                            <NavLink href="/mon-compte" class="nav-link" target="_blank">Mon Compte</NavLink>
+                        </Authorized>
+                    </AuthorizeView>
+                    <form method="post" action="logout">
+                        <button type="submit" class="nav-link nav-logout-btn">Déconnexion</button>
+                    </form>
+                </Authorized>
+            </AuthorizeView>
+        </div>
+    </header>
+    <main class="app-body">
+        <BrowserClockProvider>
+            @Body
+        </BrowserClockProvider>
+    </main>
+</div>
+
+<AuthorizeView>
+    <Authorized>
+        <RappelPopup />
+    </Authorized>
+</AuthorizeView>
+
+@if (FichiersOpen)
+{
+    <div class="nav-dropdown-backdrop" @onclick="CloseFichiers"></div>
+}
+
+<div id="blazor-error-ui">
+    Une erreur inattendue s'est produite.
+    <a href="" class="reload">Recharger</a>
+    <a class="dismiss">🗙</a>
+</div>
+
+@code {
+    private bool FichiersOpen;
+
+    private static string Capitalize(string? s) =>
+        string.IsNullOrEmpty(s) ? "" : char.ToUpper(s[0]) + s[1..];
+
+    private readonly List<(string Href, string Label)> FichierItems = new()
+    {
+        ("/clients", "Fichier des Clients"),
+        ("/familles", "Fichier des Familles"),
+        ("/franchises", "Fichier des Franchises"),
+        ("/pays", "Liste Pays"),
+        ("/assistantes", "Fichier des Assistantes"),
+        ("/fichier-filtres", "Fichier des Filtres"),
+        ("/fichier-filtres-historique", "Fichier des Filtres Historique"),
+        ("/fichier-historique", "Fichier des Historiques"),
+    };
+
+    private void ToggleFichiers() => FichiersOpen = !FichiersOpen;
+    private void CloseFichiers() => FichiersOpen = false;
+
+    protected override void OnInitialized()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        if (FichiersOpen)
+        {
+            FichiersOpen = false;
+            InvokeAsync(StateHasChanged);
+        }
+    }
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+}

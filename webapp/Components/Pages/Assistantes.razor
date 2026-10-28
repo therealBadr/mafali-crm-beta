@@ -1,0 +1,340 @@
+@page "/assistantes"
+@attribute [Authorize(Roles = "admin,assistant")]
+@inject AssistanteService AssistanteSvc
+
+<PageTitle>Assistantes</PageTitle>
+
+<div class="page page-flush wb">
+<div class="toolbar">
+    <span class="title">Table des Assistantes</span>
+    <div class="actions">
+        <button class="btn btn-primary" @onclick="OpenCreate">Nouveau</button>
+        <button class="btn btn-outline" disabled="@(Selected is null)" @onclick="OpenEdit">Modifier</button>
+        <button class="btn btn-outline" disabled="@(Selected is null)" @onclick="OpenDeleteConfirm">Supprimer</button>
+    </div>
+</div>
+
+<div class="search-bar">
+    <input class="search-input" type="text" placeholder="Rechercher…" value="@SearchTerm" @oninput="OnSearchInput" />
+    @if (!string.IsNullOrWhiteSpace(SearchTerm))
+    {
+        <span class="result-count">@Filtered.Count / @Items.Count résultats</span>
+    }
+</div>
+
+@if (Error is not null)
+{
+    <div class="alert">@Error</div>
+}
+
+@if (Loading)
+{
+    <p class="dimmed">Chargement…</p>
+}
+else
+{
+    <div class="grid-group">
+    <GridFilterClearAll Filter="Filter" OnFilterChanged="StateHasChanged" />
+    <div class="table-wrap">
+        <div class="header-row">
+            <div class="cell @Sort.CssClass("nom")" @onclick='() => Sort.Toggle("nom")'>
+                Prénom Nom @Sort.ArrowFor("nom")
+                <ColumnFilterIcon Column="nom" Label="Prénom Nom" Filter="Filter" OnFilterChanged="StateHasChanged" />
+            </div>
+            <div class="cell @Sort.CssClass("service")" @onclick='() => Sort.Toggle("service")'>
+                Service @Sort.ArrowFor("service")
+                <ColumnFilterIcon Column="service" Label="Service" Filter="Filter" OnFilterChanged="StateHasChanged" />
+            </div>
+            <div class="cell @Sort.CssClass("acces")" style="flex: 0 0 160px;" @onclick='() => Sort.Toggle("acces")'>
+                Accès à tous les Filtres @Sort.ArrowFor("acces")
+                <ColumnFilterIcon Column="acces" Label="Accès à tous les Filtres" Filter="Filter" OnFilterChanged="StateHasChanged" />
+            </div>
+            <div class="cell @Sort.CssClass("commentaire")" @onclick='() => Sort.Toggle("commentaire")'>
+                Commentaire @Sort.ArrowFor("commentaire")
+                <ColumnFilterIcon Column="commentaire" Label="Commentaire" Filter="Filter" OnFilterChanged="StateHasChanged" />
+            </div>
+        </div>
+        @foreach (var a in Filtered)
+        {
+            <div class="row @(a.PrenomNom == Selected ? "selected" : "")" @onclick="() => Select(a.PrenomNom)">
+                <div class="cell">@a.PrenomNom</div>
+                <div class="cell">@a.Service</div>
+                <div class="cell" style="flex: 0 0 160px;">
+                    <span class="badge @(a.AllFiltres ? "badge-teal" : "badge-gray")">@(a.AllFiltres ? "Oui" : "Non")</span>
+                </div>
+                <div class="cell">@a.Commentaire</div>
+            </div>
+        }
+    </div>
+    </div>
+    <p class="count">@Items.Count enregistrements</p>
+}
+</div>
+
+@if (ModalOpen && !ConflictDialogOpen)
+{
+    <div class="modal-backdrop wb" @onclick="CloseModal">
+        <div class="modal" @onclick:stopPropagation="true">
+            <h3>@(IsEditMode ? "Modifier" : "Nouveau")</h3>
+            <label for="a-prenom-nom">Prénom Nom</label>
+            <input id="a-prenom-nom" class="text-input" maxlength="100" value="@FormPrenomNom"
+                   @oninput="e => FormPrenomNom = e.Value?.ToString() ?? string.Empty" />
+            <label for="a-service">Service</label>
+            <input id="a-service" class="text-input" maxlength="30" value="@FormService"
+                   @oninput="e => FormService = e.Value?.ToString() ?? string.Empty" />
+            <label class="checkbox-label">
+                <input type="checkbox" @bind="FormAllFiltres" />
+                Accès à tous les Filtres
+            </label>
+            <label for="a-commentaire">Commentaire</label>
+            <input id="a-commentaire" class="text-input" maxlength="50" value="@FormCommentaire"
+                   @oninput="e => FormCommentaire = e.Value?.ToString() ?? string.Empty" />
+            @if (ModalError is not null)
+            {
+                <div class="alert">@ModalError</div>
+            }
+            <div class="modal-actions">
+                <button class="btn btn-default" @onclick="CloseModal">Annuler</button>
+                <button class="btn btn-primary" disabled="@Submitting" @onclick="SubmitModal">Enregistrer</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (ConflictDialogOpen)
+{
+    <div class="modal-backdrop wb" @onclick="() => ConflictDialogOpen = false">
+        <div class="modal" @onclick:stopPropagation="true">
+            <h3>Conflit détecté</h3>
+            <p class="confirm-text">
+                Cette assistante a été modifiée par quelqu'un d'autre pendant que vous la modifiiez.
+                Voici les champs concernés :
+            </p>
+            <div class="conflict-list">
+                @foreach (var c in Conflicts)
+                {
+                    <div class="conflict-row">
+                        <span class="conflict-field">@c.Field</span>
+                        <span class="conflict-values">Vous : @c.MyValue — Actuel : @c.CurrentValue</span>
+                    </div>
+                }
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-default" @onclick="ReloadAfterConflict">Recharger</button>
+                <button class="btn btn-primary" disabled="@Submitting" @onclick="ForceApply">Écraser quand même</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (ConfirmDeleteOpen)
+{
+    <div class="modal-backdrop wb" @onclick="CancelDelete">
+        <div class="modal" @onclick:stopPropagation="true">
+            <h3>Confirmer la suppression</h3>
+            <p class="confirm-text">Êtes-vous sûr de vouloir supprimer cette assistante ?</p>
+            <div class="modal-actions">
+                <button class="btn btn-default" @onclick="CancelDelete">Annuler</button>
+                <button class="btn btn-primary" disabled="@Submitting" @onclick="ConfirmDelete">Supprimer</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Assistante> Items = new();
+    private string? Selected;
+    private string SearchTerm = string.Empty;
+    private bool Loading = true;
+    private string? Error;
+    private readonly SortState Sort = new();
+    private readonly GridFilterState Filter = new();
+
+    private bool ModalOpen;
+    private bool IsEditMode;
+    private string EditingPrenomNom = string.Empty;
+    private string FormPrenomNom = string.Empty;
+    private string FormService = string.Empty;
+    private bool FormAllFiltres;
+    private string FormCommentaire = string.Empty;
+    private string? ModalError;
+    private bool Submitting;
+    private AssistanteInput? Baseline;
+    private bool ConflictDialogOpen;
+    private List<FieldConflict> Conflicts = new();
+
+    private List<Assistante> Filtered
+    {
+        get
+        {
+            var list = string.IsNullOrWhiteSpace(SearchTerm)
+                ? Items
+                : Items.Where(a =>
+                    a.PrenomNom.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase) ||
+                    (a.Service ?? "").Contains(SearchTerm, StringComparison.OrdinalIgnoreCase) ||
+                    (a.Commentaire ?? "").Contains(SearchTerm, StringComparison.OrdinalIgnoreCase))
+                  .ToList();
+            list = GridFilter.Apply(list, Filter, GetSortText);
+            return GridSort.Apply(list, Sort, GetSortText);
+        }
+    }
+
+    private static string GetSortText(Assistante a, string column) => column switch
+    {
+        "nom" => a.PrenomNom ?? "",
+        "service" => a.Service ?? "",
+        "acces" => a.AllFiltres ? "Oui" : "Non",
+        "commentaire" => a.Commentaire ?? "",
+        _ => "",
+    };
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        Loading = true;
+        Selected = null;
+        try
+        {
+            Items = await AssistanteSvc.ListAsync();
+            Error = null;
+        }
+        catch (Exception ex)
+        {
+            Error = FriendlyError.ToUserMessage(ex);
+        }
+        finally
+        {
+            Loading = false;
+        }
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        SearchTerm = e.Value?.ToString() ?? string.Empty;
+        Selected = null;
+    }
+
+    private void Select(string prenomNom) => Selected = prenomNom;
+
+    private void OpenCreate()
+    {
+        IsEditMode = false;
+        FormPrenomNom = string.Empty;
+        FormService = string.Empty;
+        FormAllFiltres = false;
+        FormCommentaire = string.Empty;
+        ModalError = null;
+        ModalOpen = true;
+    }
+
+    private void OpenEdit()
+    {
+        var current = Items.FirstOrDefault(a => a.PrenomNom == Selected);
+        if (current is null) return;
+        IsEditMode = true;
+        EditingPrenomNom = current.PrenomNom;
+        FormPrenomNom = current.PrenomNom;
+        FormService = current.Service ?? string.Empty;
+        FormAllFiltres = current.AllFiltres;
+        FormCommentaire = current.Commentaire ?? string.Empty;
+        Baseline = AssistanteInput.FromEntity(current);
+        ModalError = null;
+        ModalOpen = true;
+    }
+
+    private void CloseModal() => ModalOpen = false;
+
+    private Task SubmitModal() => SaveAsync(force: false);
+
+    private Task ForceApply()
+    {
+        ConflictDialogOpen = false;
+        return SaveAsync(force: true);
+    }
+
+    private async Task ReloadAfterConflict()
+    {
+        ConflictDialogOpen = false;
+        Conflicts = new();
+        Items = await AssistanteSvc.ListAsync();
+        var current = Items.FirstOrDefault(a => a.PrenomNom == EditingPrenomNom);
+        if (current is null) return;
+        FormPrenomNom = current.PrenomNom;
+        FormService = current.Service ?? string.Empty;
+        FormAllFiltres = current.AllFiltres;
+        FormCommentaire = current.Commentaire ?? string.Empty;
+        EditingPrenomNom = current.PrenomNom;
+        Baseline = AssistanteInput.FromEntity(current);
+    }
+
+    private async Task SaveAsync(bool force)
+    {
+        var trimmed = FormPrenomNom.Trim();
+        if (trimmed.Length == 0)
+        {
+            ModalError = "Ce champ est requis.";
+            return;
+        }
+
+        Submitting = true;
+        ModalError = null;
+        var service = string.IsNullOrWhiteSpace(FormService) ? null : FormService.Trim();
+        var commentaire = string.IsNullOrWhiteSpace(FormCommentaire) ? null : FormCommentaire.Trim();
+        try
+        {
+            if (IsEditMode)
+            {
+                if (Baseline is null) return;
+                var current = new AssistanteInput { PrenomNom = trimmed, Service = service, AllFiltres = FormAllFiltres, Commentaire = commentaire };
+                var result = await AssistanteSvc.UpdateWithConflictCheckAsync(EditingPrenomNom, Baseline, current, force);
+                if (!result.Success)
+                {
+                    Conflicts = result.Conflicts;
+                    ConflictDialogOpen = true;
+                    return;
+                }
+            }
+            else
+            {
+                await AssistanteSvc.CreateAsync(trimmed, service, FormAllFiltres, commentaire);
+            }
+            ModalOpen = false;
+            await Load();
+        }
+        catch (Exception ex)
+        {
+            ModalError = FriendlyError.ToUserMessage(ex);
+        }
+        finally
+        {
+            Submitting = false;
+        }
+    }
+
+    private bool ConfirmDeleteOpen;
+
+    private void OpenDeleteConfirm()
+    {
+        if (Selected is null) return;
+        ConfirmDeleteOpen = true;
+    }
+
+    private void CancelDelete() => ConfirmDeleteOpen = false;
+
+    private async Task ConfirmDelete()
+    {
+        if (Selected is null) return;
+        ConfirmDeleteOpen = false;
+        Error = null;
+        try
+        {
+            await AssistanteSvc.DeleteAsync(Selected);
+            await Load();
+        }
+        catch (Exception ex)
+        {
+            Error = FriendlyError.ToUserMessage(ex);
+        }
+    }
+}

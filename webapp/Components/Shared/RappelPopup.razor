@@ -1,0 +1,93 @@
+@implements IDisposable
+@inject RappelPopupDispatcher Dispatcher
+@inject CircuitContext Circuit
+@inject CurrentUserService CurrentUser
+@inject NavigationManager Nav
+@inject ILogger<RappelPopup> Logger
+
+@if (Pending.Count > 0)
+{
+    <div class="rappel-popup-layer">
+        @foreach (var rappel in Pending)
+        {
+            <div class="rappel-popup" @key="(rappel.Client.CleOpl, rappel.Moment)">
+                <div class="rappel-popup-head">
+                    <span class="rappel-popup-badge">Rappel RDV</span>
+                    <button class="rappel-popup-close" title="Fermer"
+                            @onclick="() => Dismiss(rappel)">&times;</button>
+                </div>
+
+                <div class="rappel-popup-client">
+                    @(string.IsNullOrWhiteSpace(rappel.Client.RaisonSociale)
+                        ? $"Client {rappel.Client.CleOpl}"
+                        : rappel.Client.RaisonSociale)
+                </div>
+
+                <div class="rappel-popup-when">
+                    @rappel.Client.HeureRappel?.ToString("HH:mm")
+                    @if (!string.IsNullOrWhiteSpace(rappel.Client.Pays))
+                    {
+                        <span class="rappel-popup-tz">(@rappel.Client.Pays)</span>
+                    }
+                    <span class="rappel-popup-date">@rappel.Client.DateRappel?.ToString("dd/MM/yyyy")</span>
+                </div>
+
+                <div class="rappel-popup-actions">
+                    <button class="btn btn-primary" @onclick="() => OpenParcours(rappel)">Ouvrir la fiche</button>
+                    <button class="btn btn-default" @onclick="() => Dismiss(rappel)">Plus tard</button>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private readonly List<DueRappel> Pending = new();
+    private IDisposable? _subscription;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _subscription is not null) return;
+
+        var login = await CurrentUser.GetLoginAsync();
+        if (string.IsNullOrWhiteSpace(login))
+        {
+            return;
+        }
+
+        var circuitId = Circuit.CircuitId;
+        if (string.IsNullOrWhiteSpace(circuitId))
+        {
+            Logger.LogWarning(
+                "Rappel pop-up could not determine its circuit id for {Login}; no pop-ups will be delivered to this screen",
+                login);
+            return;
+        }
+
+        _subscription = Dispatcher.Subscribe(circuitId, OnDueAsync);
+        Logger.LogDebug("Rappel pop-up listening for {Login} on circuit {CircuitId}", login, circuitId);
+    }
+
+    private async Task OnDueAsync(DueRappel rappel)
+    {
+        await InvokeAsync(() =>
+        {
+            var already = Pending.Any(p => p.Client.CleOpl == rappel.Client.CleOpl
+                                           && p.Moment == rappel.Moment);
+            if (already) return;
+
+            Pending.Add(rappel);
+            StateHasChanged();
+        });
+    }
+
+    private void Dismiss(DueRappel rappel) => Pending.Remove(rappel);
+
+    private void OpenParcours(DueRappel rappel)
+    {
+        Pending.Remove(rappel);
+        Nav.NavigateTo($"/parcours-client?mode=clients&start={rappel.Client.CleOpl}");
+    }
+
+    public void Dispose() => _subscription?.Dispose();
+}

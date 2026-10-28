@@ -1,0 +1,225 @@
+@page "/franchises"
+@attribute [Authorize(Roles = "admin,assistant")]
+@inject FranchiseService FranchiseSvc
+
+<PageTitle>Franchises</PageTitle>
+
+<div class="page page-flush wb">
+<div class="toolbar">
+    <span class="title">Table des Franchises</span>
+    <div class="actions">
+        <button class="btn btn-primary" @onclick="OpenCreate">Nouveau</button>
+        <button class="btn btn-outline" disabled="@(Selected is null)" @onclick="OpenEdit">Modifier</button>
+        <button class="btn btn-outline" disabled="@(Selected is null)" @onclick="OpenDeleteConfirm">Supprimer</button>
+    </div>
+</div>
+
+<div class="search-bar">
+    <input class="search-input" type="text" placeholder="Rechercher…" value="@SearchTerm" @oninput="OnSearchInput" />
+    @if (!string.IsNullOrWhiteSpace(SearchTerm))
+    {
+        <span class="result-count">@Filtered.Count / @Names.Count résultats</span>
+    }
+</div>
+
+@if (Error is not null)
+{
+    <div class="alert">@Error</div>
+}
+
+@if (Loading)
+{
+    <p class="dimmed">Chargement…</p>
+}
+else
+{
+    <div class="grid-group">
+    <GridFilterClearAll Filter="Filter" OnFilterChanged="StateHasChanged" />
+    <div class="table-wrap">
+        <div class="header-row">
+            <div class="cell @Sort.CssClass("name")" @onclick='() => Sort.Toggle("name")'>
+                Nom de la Franchise @Sort.ArrowFor("name")
+                <ColumnFilterIcon Column="name" Label="Nom de la Franchise" Filter="Filter" OnFilterChanged="StateHasChanged" />
+            </div>
+        </div>
+        @foreach (var name in Filtered)
+        {
+            <div class="row @(name == Selected ? "selected" : "")" @onclick="() => Select(name)">
+                <div class="cell">@name</div>
+            </div>
+        }
+    </div>
+    </div>
+    <p class="count">@Names.Count enregistrements</p>
+}
+</div>
+
+@if (ModalOpen)
+{
+    <div class="modal-backdrop wb" @onclick="CloseModal">
+        <div class="modal" @onclick:stopPropagation="true">
+            <h3>@(IsEditMode ? "Modifier" : "Nouveau")</h3>
+            <label for="franchise-name">Nom de la Franchise</label>
+            <input id="franchise-name" class="text-input" maxlength="50" value="@FormValue"
+                   @oninput="e => FormValue = e.Value?.ToString() ?? string.Empty" />
+            @if (ModalError is not null)
+            {
+                <div class="alert">@ModalError</div>
+            }
+            <div class="modal-actions">
+                <button class="btn btn-default" @onclick="CloseModal">Annuler</button>
+                <button class="btn btn-primary" disabled="@Submitting" @onclick="SubmitModal">Enregistrer</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (ConfirmDeleteOpen)
+{
+    <div class="modal-backdrop wb" @onclick="CancelDelete">
+        <div class="modal" @onclick:stopPropagation="true">
+            <h3>Confirmer la suppression</h3>
+            <p class="confirm-text">Êtes-vous sûr de vouloir supprimer cette franchise ?</p>
+            <div class="modal-actions">
+                <button class="btn btn-default" @onclick="CancelDelete">Annuler</button>
+                <button class="btn btn-primary" disabled="@Submitting" @onclick="ConfirmDelete">Supprimer</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<string> Names = new();
+    private string? Selected;
+    private string SearchTerm = string.Empty;
+    private bool Loading = true;
+    private string? Error;
+    private readonly SortState Sort = new();
+    private readonly GridFilterState Filter = new();
+
+    private bool ModalOpen;
+    private bool IsEditMode;
+    private string FormValue = string.Empty;
+    private string? ModalError;
+    private bool Submitting;
+
+    private List<string> Filtered
+    {
+        get
+        {
+            var list = string.IsNullOrWhiteSpace(SearchTerm)
+                ? Names
+                : Names.Where(f => f.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase)).ToList();
+            list = GridFilter.Apply(list, Filter, (name, _) => name);
+            return GridSort.Apply(list, Sort, (name, _) => name);
+        }
+    }
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        Loading = true;
+        Selected = null;
+        try
+        {
+            Names = await FranchiseSvc.ListAsync();
+            Error = null;
+        }
+        catch (Exception ex)
+        {
+            Error = FriendlyError.ToUserMessage(ex);
+        }
+        finally
+        {
+            Loading = false;
+        }
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        SearchTerm = e.Value?.ToString() ?? string.Empty;
+        Selected = null;
+    }
+
+    private void Select(string name) => Selected = name;
+
+    private void OpenCreate()
+    {
+        IsEditMode = false;
+        FormValue = string.Empty;
+        ModalError = null;
+        ModalOpen = true;
+    }
+
+    private void OpenEdit()
+    {
+        if (Selected is null) return;
+        IsEditMode = true;
+        FormValue = Selected;
+        ModalError = null;
+        ModalOpen = true;
+    }
+
+    private void CloseModal() => ModalOpen = false;
+
+    private async Task SubmitModal()
+    {
+        var trimmed = FormValue.Trim();
+        if (trimmed.Length == 0)
+        {
+            ModalError = "Ce champ est requis.";
+            return;
+        }
+
+        Submitting = true;
+        ModalError = null;
+        try
+        {
+            if (IsEditMode)
+            {
+                await FranchiseSvc.RenameAsync(Selected!, trimmed);
+            }
+            else
+            {
+                await FranchiseSvc.CreateAsync(trimmed);
+            }
+            ModalOpen = false;
+            await Load();
+        }
+        catch (Exception ex)
+        {
+            ModalError = FriendlyError.ToUserMessage(ex);
+        }
+        finally
+        {
+            Submitting = false;
+        }
+    }
+
+    private bool ConfirmDeleteOpen;
+
+    private void OpenDeleteConfirm()
+    {
+        if (Selected is null) return;
+        ConfirmDeleteOpen = true;
+    }
+
+    private void CancelDelete() => ConfirmDeleteOpen = false;
+
+    private async Task ConfirmDelete()
+    {
+        if (Selected is null) return;
+        ConfirmDeleteOpen = false;
+        Error = null;
+        try
+        {
+            await FranchiseSvc.DeleteAsync(Selected);
+            await Load();
+        }
+        catch (Exception ex)
+        {
+            Error = FriendlyError.ToUserMessage(ex);
+        }
+    }
+}
