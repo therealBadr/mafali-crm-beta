@@ -9,7 +9,7 @@
 | Logiciel | Version | Pourquoi |
 |---|---|---|
 | **.NET SDK** | 8.0 | L'application cible `net8.0`. Le SDK 9 ou 10 sait aussi compiler du net8.0, mais le SDK 8 est ce qui a servi au développement. |
-| **PostgreSQL** | 13 ou plus | La base. Les scripts utilisent `GENERATED ALWAYS AS IDENTITY` et `ON CONFLICT`, disponibles depuis la version 10. |
+| **PostgreSQL** | **14 ou plus** | La base. Les scripts eux-mêmes se contentent de la version 10, mais l'échantillon (`echantillon/`) a été produit par `pg_dump` 14 : une restauration vers une version antérieure échoue. |
 
 Vérification :
 
@@ -18,9 +18,45 @@ dotnet --version
 psql --version
 ```
 
+> **Si `psql` répond « commande introuvable », c'est normal :** l'installateur
+> PostgreSQL sous Windows n'ajoute pas ses outils en ligne de commande au PATH.
+> Les binaires (`psql`, `createdb`, `pg_restore`) sont dans
+> `C:\Program Files\PostgreSQL\<version>\bin`. Ajoutez ce dossier au PATH, ou
+> préfixez les commandes de ce document par ce chemin.
+>
+> Sous Linux, installez `postgresql-client` ; les outils y sont déjà dans le PATH,
+> mais la connexion locale se fait par défaut en authentification `peer` — il faut
+> donc soit passer par `sudo -u postgres`, soit définir un mot de passe sur le rôle
+> `postgres` pour pouvoir se connecter en TCP comme le fait l'application.
+
 Aucun autre outil n'est nécessaire : pas de Node.js, pas de npm, pas de
 compilation front-end. Le CSS et le JavaScript sont écrits à la main et servis
 tels quels.
+
+---
+
+## Le plus court chemin : restaurer l'échantillon
+
+Si vous voulez simplement voir l'application fonctionner, **n'appliquez pas les
+28 scripts** : restaurez l'échantillon fourni, qui contient déjà le schéma,
+405 clients, 25 245 interactions et 72 pièces jointes.
+
+```bash
+createdb -U postgres -E UTF8 mafali_crm_db
+```
+
+```bash
+pg_restore -U postgres -d mafali_crm_db echantillon/echantillon_mafali.dump
+```
+
+Puis passez directement à l'étape 4 (chaîne de connexion). Tous les comptes ont
+un mot de passe vide : celui que vous saisissez à la première connexion devient
+le mot de passe. Détails et contenu exact :
+[../echantillon/README.md](../echantillon/README.md).
+
+Les étapes 2 et 3 ci-dessous décrivent l'autre chemin — partir d'une base
+**vide** — qui reste la référence pour comprendre le schéma et pour une
+installation réelle.
 
 ---
 

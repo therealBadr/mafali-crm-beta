@@ -20,10 +20,6 @@ pas une erreur : c'est le signal qui déclenche la définition du mot de passe.
 
 Aux connexions suivantes, ce mot de passe est vérifié normalement.
 
-Ce fonctionnement reprend celui de l'ancienne application WinDev (le mécanisme
-`MotPasseASaisir` de GPWLogin), pour que la reprise se fasse sans distribuer de
-mots de passe provisoires. Le code est dans
-`webapp/Services/UserService.cs`, méthode `LoginAsync`.
 
 ### Conséquence pour les tests
 
@@ -34,6 +30,14 @@ choisi par le premier. Mettez-vous d'accord, ou créez un compte par testeur.
 ---
 
 ## 2. Créer le premier compte
+
+> **Si vous avez restauré l'échantillon** ([../echantillon/README.md](../echantillon/README.md)),
+> cette section ne vous concerne pas : les 22 comptes réels sont déjà là, tous à
+> mot de passe vide. Connectez-vous en `BADR BADR` (admin) ou `Bruno`
+> (commercial), avec le mot de passe de votre choix.
+>
+> Il n'y a **aucun compte `assistant`**, parce qu'il n'en existe aucun en
+> production. Créez-en un depuis Mon Compte → Utilisateurs pour tester ce rôle.
 
 Les comptes sont normalement créés à partir de la table `assistantes` par le
 script `database/05_users_and_roles.sql` : un compte par assistante existante,

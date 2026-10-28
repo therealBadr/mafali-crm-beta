@@ -124,20 +124,6 @@ html, body {
     margin-bottom: var(--space-5);
 }
 
-.login-mark {
-    width: 40px;
-    height: 40px;
-    flex-shrink: 0;
-    border-radius: var(--radius-md);
-    background: linear-gradient(135deg, var(--teal), var(--teal-active));
-    color: #ffffff;
-    font-size: 17px;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
 .login-card h1 {
     margin: 0;
     font-size: 19px;
@@ -1134,4 +1120,242 @@ h1:focus {
     .wb-form .btn {
         transition: none !important;
     }
+}
+
+/* Skin des deux constructeurs de filtres (Definir un Filtre et sa variante
+   Historique). Classe a poser sur la racine .page ; ces pages n'ont pas de
+   modal propre, le leur vient du composant FiltreDetailModal. */
+.wb-filtre .filter-table {
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.wb-filtre .filter-table th,
+.wb-filtre .filter-table td {
+    box-sizing: border-box;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: var(--text-body);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    border-right: 1px solid var(--header-border);
+    text-align: left;
+    vertical-align: middle;
+}
+
+.wb-filtre .filter-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--header-strong-bg);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--navy);
+    border-bottom: 3px solid var(--teal);
+}
+
+.wb-filtre .filter-table tbody tr {
+    background: #ffffff;
+    border-bottom: 1px solid var(--border-lighter);
+}
+
+.wb-filtre .filter-table tbody tr:nth-child(even) {
+    background: var(--row-alt);
+}
+
+.wb-filtre .filter-table tbody tr:hover {
+    background: var(--row-hover);
+}
+
+.wb-filtre .filter-table td.value-cell {
+    overflow: visible;
+    white-space: normal;
+}
+
+.wb-filtre .value-btn {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    flex-shrink: 0;
+    border-radius: 50%;
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 150ms ease, border-color 150ms ease, transform 100ms ease, box-shadow 150ms ease;
+}
+
+.wb-filtre .value-btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--navy);
+}
+
+.wb-filtre .btn-add-value {
+    border: none;
+    background: var(--teal);
+    color: #ffffff;
+    box-shadow: 0 1px 2px rgba(11, 35, 64, 0.25);
+}
+
+.wb-filtre .btn-add-value:hover {
+    background: var(--teal-hover);
+}
+
+.wb-filtre .btn-add-value:active {
+    background: var(--teal-active);
+    transform: scale(0.92);
+}
+
+.wb-filtre .btn-remove-value {
+    border: 1.5px solid var(--danger);
+    background: var(--danger-bg);
+    color: var(--danger);
+}
+
+.wb-filtre .btn-remove-value:hover {
+    background: var(--danger);
+    color: #ffffff;
+}
+
+.wb-filtre .btn-remove-value:active {
+    transform: scale(0.92);
+}
+
+.page.wb-filtre {
+    background: var(--color-surface);
+    border-radius: var(--radius-sm);
+    box-shadow: none;
+    border: 1px solid var(--color-workbench-border);
+    font-family: var(--font-sans-workbench);
+    color: var(--color-ink);
+}
+
+.wb-filtre .toolbar {
+    background: var(--color-paper);
+    border-bottom: 1px solid var(--color-workbench-border);
+    box-shadow: none;
+}
+
+.wb-filtre .toolbar .title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 16px;
+    color: var(--color-ink);
+    border-left-color: var(--color-coral);
+}
+
+.wb-filtre .btn-primary {
+    background: var(--color-coral);
+    background-image: none;
+    color: #ffffff;
+    border: none;
+    box-shadow: none;
+    font-weight: 600;
+}
+
+.wb-filtre .btn-primary:hover:not(:disabled) {
+    background: var(--color-coral);
+    filter: brightness(0.94);
+}
+
+.wb-filtre .btn-outline,
+.wb-filtre .btn-default {
+    background: var(--color-surface);
+    border: 1px solid var(--color-workbench-border);
+    color: var(--color-ink);
+}
+
+.wb-filtre .btn-outline:hover:not(:disabled),
+.wb-filtre .btn-default:hover:not(:disabled) {
+    background: var(--color-ink-soft);
+}
+
+.wb-filtre .btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-coral);
+}
+
+.wb-filtre .search-bar {
+    background: var(--color-paper);
+    border-bottom: 1px solid var(--color-workbench-border);
+}
+
+.wb-filtre .search-input {
+    font-family: var(--font-sans-workbench);
+    border: 1px solid var(--color-workbench-border);
+    border-radius: 4px;
+    background: var(--color-surface);
+    color: var(--color-ink);
+}
+
+.wb-filtre .alert {
+    background: var(--color-coral-soft);
+    color: var(--color-coral);
+    border: 1px solid var(--color-coral-soft-strong);
+}
+
+.wb-filtre .dimmed {
+    color: var(--color-muted-foreground);
+}
+
+.wb-filtre .filter-table th,
+.wb-filtre .filter-table td {
+    color: var(--color-ink);
+    font-family: var(--font-sans-workbench);
+    border-right: 1px solid var(--color-workbench-border);
+}
+
+.wb-filtre .filter-table thead th {
+    background: var(--color-paper);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    color: var(--color-muted-foreground);
+    border-bottom: 1px solid var(--color-workbench-border);
+}
+
+.wb-filtre .filter-table tbody tr {
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-workbench-border);
+}
+
+.wb-filtre .filter-table tbody tr:nth-child(even) {
+    background: var(--color-surface);
+}
+
+.wb-filtre .filter-table tbody tr:hover {
+    background: color-mix(in srgb, var(--color-surface) 96%, var(--color-ink) 4%);
+}
+
+.wb-filtre .value-btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-coral);
+}
+
+.wb-filtre .btn-add-value {
+    background: var(--color-coral);
+    box-shadow: none;
+}
+
+.wb-filtre .btn-add-value:hover {
+    background: var(--color-coral);
+    filter: brightness(0.94);
+}
+
+.wb-filtre .btn-add-value:active {
+    background: var(--color-coral);
+    filter: brightness(0.88);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .wb-filtre .value-btn,
+    .wb-filtre .filter-table tbody tr {
+        transition: none !important;
+    }
+
 }

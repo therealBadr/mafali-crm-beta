@@ -3,7 +3,7 @@
 [← Retour à l'index](README.md)
 
 25 écrans, présentés dans l'ordre du menu. Pour chacun : à quoi il sert, son
-adresse, qui y a accès, et la fenêtre WinDev correspondante quand elle existe.
+adresse, qui y a accès...
 
 Le tableau complet des accès par rôle est dans
 [02 — Connexion et rôles](02-connexion-et-roles.md#5-tableau-des-accès-par-écran).
@@ -35,7 +35,7 @@ créer, modifier, supprimer, importer et exporter en Excel.
 
 La grille est **paginée côté base de données** : seules les lignes affichées sont
 chargées, avec tri et filtres traduits en SQL. Important, la table réelle
-compte plus de 93 000 clients. Les colonnes se redimensionnent à la souris
+compte plus de 87 000 clients. Les colonnes se redimensionnent à la souris
 comme dans Excel, et la hauteur de la grille s'ajuste en tirant sa bordure
 supérieure.
 

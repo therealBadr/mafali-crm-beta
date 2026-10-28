@@ -30,8 +30,8 @@ Le schéma est **fidèle à HFSQL**, délibérément. Les choix structurants :
 
 ### `france_optique` — les clients
 
-La table centrale. Clé primaire `cle_opl` (`BIGINT`). Environ 93 000 lignes en
-production.
+La table centrale. Clé primaire `cle_opl` (`BIGINT`). 87 383 lignes en
+production (mesuré le 2026-10-28).
 
 Groupes de colonnes :
 

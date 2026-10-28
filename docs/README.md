@@ -2,6 +2,10 @@
 
 ## Où commencer ?
 
+**Je veux juste voir l'application tourner**
+→ restaurez l'échantillon : [../echantillon/README.md](../echantillon/README.md)
+(405 clients, 25 245 interactions, 72 pièces jointes, deux commandes)
+
 **Je dois installer l'application**
 → [01 — Installation et lancement](01-installation.md)
 
@@ -31,8 +35,7 @@ première connexion le définit), le verrouillage après 5 échecs, les trois r�
 
 ### [03 — Les écrans, un par un](03-les-ecrans.md)
 Les 25 écrans regroupés comme dans le menu, avec pour chacun son rôle, son
-adresse et qui peut y accéder. Correspondance avec les fenêtres de l'ancienne
-application WinDev quand elle existe.
+adresse et qui peut y accéder.
 
 ### [04 — Guide de test](04-guide-de-test.md)
 Scénarios de test par domaine fonctionnel, pièges connus et comportements

@@ -52,7 +52,7 @@ modifier quoi que ce soit.
   que l'onglet reste ouvert. Conséquence majeure, voir § 4.1.
 - **Ce qu'un composant garde en mémoire reste sur le serveur** tant que l'onglet
   est ouvert. Le coût est donc par **utilisateur**, non par requête. Charger
-  93 000 lignes dans un champ de composant, c'est 93 000 lignes retenues pour
+  87 000 lignes dans un champ de composant, c'est 87 000 lignes retenues pour
   chaque personne qui ouvre l'écran.
 - Les interactions à haute fréquence (glisser pour redimensionner une colonne)
   doivent rester **côté navigateur** : un aller-retour SignalR par pixel serait

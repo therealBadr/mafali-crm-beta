@@ -1,7 +1,5 @@
 # Mafali CRM
 
-Application CRM de Mafali Optique. Remplace l'ancienne application WinDev/HFSQL
-par une application web consultable depuis n'importe quel poste du réseau local.
 
 **Technologies** : .NET 8 · ASP.NET Core · Blazor Server · Entity Framework Core 8 · PostgreSQL
 
@@ -9,7 +7,18 @@ par une application web consultable depuis n'importe quel poste du réseau local
 
 ## Démarrage rapide
 
-Pour une installation complète et commentée, voir
+Le plus court chemin — restaurer l'échantillon fourni, qui contient le schéma
+et des données réelles (405 clients, 25 245 interactions, 72 pièces jointes) :
+
+```bash
+createdb -U postgres -E UTF8 mafali_crm_db && pg_restore -U postgres -d mafali_crm_db echantillon/echantillon_mafali.dump
+```
+
+Puis renseignez le mot de passe PostgreSQL dans
+`webapp/appsettings.Development.json` et lancez l'application. Voir
+**[echantillon/README.md](echantillon/README.md)**.
+
+Pour partir d'une base **vide**, voir
 **[docs/01-installation.md](docs/01-installation.md)**. En résumé :
 
 ```bash
@@ -67,6 +76,7 @@ webapp/                    L'application (projet unique)
     Shared/                Composants réutilisables (dates, heures, popups…)
   wwwroot/                 CSS, JavaScript, polices
 database/                  Les 28 scripts SQL, à appliquer dans l'ordre
+echantillon/               Échantillon + scripts pour en refaire un
 docs/                      Cette documentation
 ```
 
